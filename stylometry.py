@@ -25,6 +25,8 @@ def num_of_titlecase(text: str) -> int:
 
 def average_len_of_words(text: str) -> float:
     words = re.findall(r'\w+', text)
+    if len(words) == 0:
+        return 0
     return sum([len(word) for word in words]) / len(words)
 
 

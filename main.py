@@ -42,12 +42,12 @@ def train_model(df):
     print(accuracy_score(test_y_labels, pred_y_labels))
 
 
-gather_corpus("enron_mail/maildir")
+# gather_corpus("enron_mail/maildir")
 
-# df = pd.read_csv("corpus.csv", index_col=0)
-# calculate_stylometry(df)
-# df.to_csv("corpus.csv")
-# train_model(df)
+df = pd.read_csv("corpus.csv", index_col=0)
+calculate_stylometry(df)
+df.to_csv("corpus.csv")
+train_model(df)
 
 # print(df)
 
