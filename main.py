@@ -1,6 +1,4 @@
 import os
-from turtle import xcor
-import time
 
 import numpy as np
 import pandas as pd
@@ -13,14 +11,13 @@ from data_loader import gather_corpus
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
-from keras.utils import to_categorical
 from gensim.models import Word2Vec
 from nltk import word_tokenize
 
 
 def train_model(df):
     # should I make the y categorical only on train or full dataset?
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender', "path", "text"]), df['sender'], test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender', "path"]), df['sender'], test_size=0.2)
     encoder = LabelBinarizer()
     y_train = encoder.fit_transform(y_train)
     y_test = encoder.transform(y_test)
@@ -35,7 +32,7 @@ def train_model(df):
     model.add(Dense(y_train.shape[1], activation='softmax'))
 
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    model.fit(X_train, y_train, epochs=300, validation_split=0.2)
+    model.fit(X_train, y_train, epochs=300, validation_split=0.2, batch_size=32)
     pred_y = model.predict(X_test)
     pred_y_labels = list(map(lambda x: np.where(x == max(x))[0][0], pred_y))
     test_y_labels = list(map(lambda x: np.where(x == max(x))[0][0], y_test))
@@ -44,10 +41,10 @@ def train_model(df):
 
 # gather_corpus("enron_mail/maildir")
 
-df = pd.read_csv("corpus.csv", index_col=0)
-calculate_stylometry(df)
-df.to_csv("corpus.csv")
-train_model(df)
+df = pd.read_csv("corpus_processed.csv", index_col=0)
+# calculate_stylometry(df)
+# df.to_csv("corpus_processed.csv")
+train_model(df[0:round(len(df)/1.5)])
 
 # print(df)
 
