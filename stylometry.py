@@ -63,7 +63,7 @@ def num_of_digits(text: str) -> int:
 #    return num_of_digits(text) / num_of_chars(text)
 
 
-def calculate_stylometry(df: pd.DataFrame) -> None:
+def calculate_stylometry(df: pd.DataFrame) -> pd.DataFrame:
     print(time.time())
     df["num_of_words"] = df["text"].apply(num_of_words)
     print(time.time())
@@ -89,5 +89,5 @@ def calculate_stylometry(df: pd.DataFrame) -> None:
     print(time.time())
     df["num_of_digits"] = df["text"].apply(num_of_digits)
     print(time.time())
-    df.drop(columns=["text"], inplace=True)
+    return df
 

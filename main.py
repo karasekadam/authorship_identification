@@ -2,28 +2,198 @@ import os
 
 import numpy as np
 import pandas as pd
-import re
 from keras import Sequential
 from keras.layers import Dense
-
 from stylometry import calculate_stylometry
 from data_loader import gather_corpus
+from process_text import glove_avg_embedding, create_word2vec, embed_df_word2vec, create_tf_idf, transform_tf_idf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
-from gensim.models import Word2Vec
-from nltk import word_tokenize
+from sklearn.naive_bayes import MultinomialNB
 
 
-def train_model(df):
-    # should I make the y categorical only on train or full dataset?
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender', "path"]), df['sender'], test_size=0.2)
+stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
+
+
+class Model:
+    def __init__(self, model_type: str, batch_ratio: float) -> None:
+        self.model_type = model_type
+        self.model = None
+        self.data_transformer = None
+        self.batch_ratio = batch_ratio
+        self.encoder = None
+        self.scaler = None
+        self.x_train = None
+        self.x_test = None
+        self.x_val = None
+        self.y_train = None
+        self.y_test = None
+        self.y_val = None
+
+
+    def init_model(self) -> None:
+        model = Sequential()
+        model.add(Dense(256, activation='relu', input_dim=self.x_train.shape[1]))
+        model.add(Dense(128, activation='relu'))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dense(self.y_train.shape[1], activation='softmax'))
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        self.model = model
+
+
+    def fit_data(self, df: pd.DataFrame) -> None:
+        df.drop(columns=['path'], inplace=True)
+
+        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
+                                                            df['sender'], test_size=0.2)
+        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train, test_size=0.2)
+
+        self.encoder = LabelBinarizer()
+        self.encoder.fit(self.y_train)
+        self.scaler = MinMaxScaler()
+        self.scaler.fit(self.x_train.drop(columns=['text']))
+
+        if self.model_type == "tfidf":
+            self.data_transformer = create_tf_idf(self.x_train)
+        elif self.model_type == "word2vec":
+            self.data_transformer = create_word2vec(self.x_train)
+        elif self.model_type == "glove":
+            self.data_transformer = glove_avg_embedding(self.x_train)
+
+
+    def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
+        return df_to_slice[iter_i*self.batch_ratio*len(df_to_slice) : (iter_i+1)*self.batch_ratio*len(df_to_slice)]
+
+
+    def train_model(self) -> None:
+        for i in range(int(1//self.batch_ratio)):
+            X_train = self.slice_batch(self.x_train, i)
+            X_test = self.slice_batch(self.x_test, i)
+            X_val = self.slice_batch(self.x_val, i)
+            y_train = self.slice_batch(self.y_train, i)
+            y_test = self.slice_batch(self.y_test, i)
+            y_val = self.slice_batch(self.y_val, i)
+
+            if self.model_type == "word2vec_train":
+                X_train = embed_df_word2vec(X_train, self.data_transformer)
+                X_test = embed_df_word2vec(X_test, self.data_transformer)
+                X_val = embed_df_word2vec(X_val, self.data_transformer)
+
+            elif self.model_type == "tfidf":
+                X_train = transform_tf_idf(X_train, self.data_transformer)
+                X_test = transform_tf_idf(X_test, self.data_transformer)
+                X_val = transform_tf_idf(X_val, self.data_transformer)
+
+            elif self.model_type == "glove":
+                pass
+
+            y_train = self.encoder.transform(y_train)
+            y_test = self.encoder.transform(y_test)
+            y_val = self.encoder.transform(y_val)
+
+            X_train[stylometry_names] = self.scaler.transform(X_train[stylometry_names])
+            X_test[stylometry_names] = self.scaler.transform(X_test[stylometry_names])
+            X_val[stylometry_names] = self.scaler.transform(X_val[stylometry_names])
+
+            self.init_model()
+            self.model.fit(X_train, y_train, epochs=150, validation_data=(X_val, y_val))
+
+
+def batch_generator(X_data, y_data, batch_size, steps):
+    idx=0
+    while True:
+        X_data = X_data[idx*batch_size:(idx+1)*batch_size]
+        y_data = y_data[idx*batch_size:(idx+1)*batch_size]
+        yield (X_data, y_data)
+        if idx<steps:
+            idx+=1
+        else:
+            idx=1
+
+
+def prepare_data(df: pd.DataFrame, model: str) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame):
+    df.drop(columns=['path'], inplace=True)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2)
+    X_train = calculate_stylometry(X_train)
+    X_test = calculate_stylometry(X_test)
+    X_val = calculate_stylometry(X_val)
+
+    if model == "word2vec_train":
+        w2v_model = create_word2vec(X_train)
+        X_train = embed_df_word2vec(X_train, w2v_model)
+        X_test = embed_df_word2vec(X_test, w2v_model)
+        X_val = embed_df_word2vec(X_val, w2v_model)
+
+    elif model == "tfidf":
+        tfidf_vectorizer = create_tf_idf(X_train)
+        X_train = transform_tf_idf(X_train, tfidf_vectorizer)
+        print(X_train.memory_usage(deep=True))
+        X_test = transform_tf_idf(X_test, tfidf_vectorizer)
+        X_val = transform_tf_idf(X_val, tfidf_vectorizer)
+
+    elif model == "glove":
+        pass
+
     encoder = LabelBinarizer()
     y_train = encoder.fit_transform(y_train)
     y_test = encoder.transform(y_test)
+    y_val = encoder.transform(y_val)
+
     scaler = MinMaxScaler()
+    X_train.columns = X_train.columns.astype(str)
+    X_test.columns = X_test.columns.astype(str)
+    X_val.columns = X_val.columns.astype(str)
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
+    X_val = scaler.transform(X_val)
+    return X_train, X_test, X_val, y_train, y_test, y_val
+
+
+def train_model(df: pd.DataFrame, model: str):
+    """df.drop(columns=['path'], inplace=True)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2)
+    X_train = calculate_stylometry(X_train)
+    X_test = calculate_stylometry(X_test)
+    X_val = calculate_stylometry(X_val)
+
+    if model == "word2vec_train":
+        w2v_model = create_word2vec(X_train)
+        X_train = embed_df_word2vec(X_train, w2v_model)
+        X_test = embed_df_word2vec(X_test, w2v_model)
+        X_val = embed_df_word2vec(X_val, w2v_model)
+
+    elif model == "tfidf":
+        tfidf_vectorizer = create_tf_idf(X_train)
+        X_train = transform_tf_idf(X_train, tfidf_vectorizer)
+        print(X_train.memory_usage(deep=True))
+        X_test = transform_tf_idf(X_test, tfidf_vectorizer)
+        X_val = transform_tf_idf(X_val, tfidf_vectorizer)
+
+    elif model == "glove":
+        pass
+
+    encoder = LabelBinarizer()
+    y_train = encoder.fit_transform(y_train)
+    y_test = encoder.transform(y_test)
+    y_val = encoder.transform(y_val)
+
+    scaler = MinMaxScaler()
+    X_train.columns = X_train.columns.astype(str)
+    X_test.columns = X_test.columns.astype(str)
+    X_val.columns = X_val.columns.astype(str)
+
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    X_val = scaler.transform(X_val)
+
+    # batch_size = 1024
+    # steps = len(X_train) // batch_size
+
+    # train_generator = batch_generator(X_train, y_train, batch_size, steps)
+    # validation_generator = batch_generator(df, batch_size, len(X_test) // batch_size)
 
     model = Sequential()
     model.add(Dense(256, activation='relu', input_dim=X_train.shape[1]))
@@ -32,41 +202,35 @@ def train_model(df):
     model.add(Dense(y_train.shape[1], activation='softmax'))
 
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    model.fit(X_train, y_train, epochs=300, validation_split=0.2, batch_size=32)
+    # model.fit(x=train_generator, steps_per_epoch=len(X_train) // batch_size, epochs=300, validation_data=(X_val, y_val))
+    model.fit(X_train, y_train, epochs=150, validation_data=(X_val, y_val))
     pred_y = model.predict(X_test)
     pred_y_labels = list(map(lambda x: np.where(x == max(x))[0][0], pred_y))
     test_y_labels = list(map(lambda x: np.where(x == max(x))[0][0], y_test))
-    print(accuracy_score(test_y_labels, pred_y_labels))
+    print(accuracy_score(test_y_labels, pred_y_labels))"""
 
+
+
+def baseline(df):
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender', "path"]), df['sender'],
+                                                        test_size=0.2)
+    clf = MultinomialNB(force_alpha=True)
+    clf.fit(X_train, y_train)
+    print(clf.score(X_test, y_test))
 
 # gather_corpus("enron_mail/maildir")
 
-df = pd.read_csv("corpus_processed.csv", index_col=0)
-# calculate_stylometry(df)
+# df = pd.read_csv("corpus_glove_avg.csv", index_col=0)
 # df.to_csv("corpus_processed.csv")
-train_model(df[0:round(len(df)/1.5)])
 
-# print(df)
+df = pd.read_csv("corpus.csv", index_col=0)
+# calculate_stylometry(df)
+# df.to_csv("corpus.csv")
 
-
-# print(load_emails("enron_mail/maildir/allen-p/_sent_mail", senders))
-# df = pd.DataFrame(senders, columns=['sender', 'text', 'path'])
-# print(corp["1_"])
-# print(process_email(corp["1_"]))
-# just_text = [word_tokenize(corp[key]) for key in corp.keys()]
-
-"""w2v_model = Word2Vec(min_count=1,
-                     window=5,
-                     vector_size=256,
-                     sample=6e-5,
-                     alpha=0.03,
-                     min_alpha=0.0007,
-                     negative=20)
-
-w2v_model.build_vocab(just_text)
-w2v_model.train(just_text, total_examples=w2v_model.corpus_count, epochs=30, report_delay=1)
-print(w2v_model.wv)
-print(len(w2v_model.wv))
-print(w2v_model.wv["Zdar"])
-print(w2v_model.wv.key_to_index['Zdar'])"""
+model = Model(model_type="tfidf", batch_ratio=0.1)
+model.fit_data(df)
+model.train_model()
+# create_word2vec(df)
+# baseline(df)
+# train_model(df[0:len(df)], "tfidf")
 

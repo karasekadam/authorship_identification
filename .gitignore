@@ -1,0 +1,5 @@
+corpus.csv
+corpus_processed.csv
+enron_mail/
+.idea/
+__pycache__/
