@@ -1,5 +1,4 @@
 import os
-
 import numpy as np
 import pandas as pd
 from keras import Sequential
@@ -11,6 +10,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import MultinomialNB
+from math import floor
+import gc
 
 
 stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
@@ -33,11 +34,18 @@ class Model:
 
 
     def init_model(self) -> None:
+        if self.model_type == "tfidf":
+            input_dim = self.data_transformer.idf_.shape[0] + len(stylometry_names) - 1
+        else:
+            input_dim = 1
+
+        output_dim = self.encoder.classes_.shape[0]
+
         model = Sequential()
-        model.add(Dense(256, activation='relu', input_dim=self.x_train.shape[1]))
+        model.add(Dense(256, activation='relu', input_dim=input_dim))
         model.add(Dense(128, activation='relu'))
         model.add(Dense(64, activation='relu'))
-        model.add(Dense(self.y_train.shape[1], activation='softmax'))
+        model.add(Dense(output_dim, activation='softmax'))
         model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
 
@@ -63,41 +71,54 @@ class Model:
 
 
     def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
-        return df_to_slice[iter_i*self.batch_ratio*len(df_to_slice) : (iter_i+1)*self.batch_ratio*len(df_to_slice)]
+        lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
+        upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
+        return df_to_slice[lower_index:upper_index]
 
 
     def train_model(self) -> None:
+        self.init_model()
+
         for i in range(int(1//self.batch_ratio)):
+            print("Batch: ", i)
+
             X_train = self.slice_batch(self.x_train, i)
-            X_test = self.slice_batch(self.x_test, i)
             X_val = self.slice_batch(self.x_val, i)
             y_train = self.slice_batch(self.y_train, i)
-            y_test = self.slice_batch(self.y_test, i)
             y_val = self.slice_batch(self.y_val, i)
 
             if self.model_type == "word2vec_train":
                 X_train = embed_df_word2vec(X_train, self.data_transformer)
-                X_test = embed_df_word2vec(X_test, self.data_transformer)
                 X_val = embed_df_word2vec(X_val, self.data_transformer)
-
             elif self.model_type == "tfidf":
                 X_train = transform_tf_idf(X_train, self.data_transformer)
-                X_test = transform_tf_idf(X_test, self.data_transformer)
                 X_val = transform_tf_idf(X_val, self.data_transformer)
-
             elif self.model_type == "glove":
                 pass
 
             y_train = self.encoder.transform(y_train)
-            y_test = self.encoder.transform(y_test)
             y_val = self.encoder.transform(y_val)
 
             X_train[stylometry_names] = self.scaler.transform(X_train[stylometry_names])
-            X_test[stylometry_names] = self.scaler.transform(X_test[stylometry_names])
             X_val[stylometry_names] = self.scaler.transform(X_val[stylometry_names])
 
-            self.init_model()
-            self.model.fit(X_train, y_train, epochs=150, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=15, validation_data=(X_val, y_val))
+            gc.collect()
+        self.test_model()
+
+    def test_model(self) -> None:
+        if self.model_type == "word2vec_train":
+            self.x_test = embed_df_word2vec(self.x_test, self.data_transformer)
+        elif self.model_type == "tfidf":
+            self.x_test = transform_tf_idf(self.x_test, self.data_transformer)
+        elif self.model_type == "glove":
+            pass
+
+        self.y_test = self.encoder.transform(self.y_test)
+        self.x_test[stylometry_names] = self.scaler.transform(self.x_test[stylometry_names])
+
+        self.model.evaluate(self.x_test, self.y_test)
+
 
 
 def batch_generator(X_data, y_data, batch_size, steps):
