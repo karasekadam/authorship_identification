@@ -1,11 +1,13 @@
 import os
 import numpy as np
 import pandas as pd
-from keras import Sequential
-from keras.layers import Dense
+from tensorflow.python.keras import Sequential
+from tensorflow.python.keras.layers import Dense
+import tensorflow.python.keras as keras
 from stylometry import calculate_stylometry
 from data_loader import gather_corpus
-from process_text import glove_avg_embedding, create_word2vec, embed_df_word2vec, create_tf_idf, transform_tf_idf
+from process_text import glove_avg_embedding, create_word2vec, embed_df_word2vec, create_tf_idf, transform_tf_idf, \
+    glove_padd_embedding
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
@@ -32,7 +34,6 @@ class Model:
         self.y_test = None
         self.y_val = None
 
-
     def init_model(self) -> None:
         if self.model_type == "tfidf":
             input_dim = self.data_transformer.idf_.shape[0] + len(stylometry_names) - 1
@@ -49,13 +50,13 @@ class Model:
         model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
 
-
     def fit_data(self, df: pd.DataFrame) -> None:
         df.drop(columns=['path'], inplace=True)
 
         self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
-                                                            df['sender'], test_size=0.2)
-        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train, test_size=0.2)
+                                                            df['sender'], test_size=0.2, random_state=42)
+        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train, test_size=0.2,
+                                                                              random_state=42)
 
         self.encoder = LabelBinarizer()
         self.encoder.fit(self.y_train)
@@ -66,15 +67,15 @@ class Model:
             self.data_transformer = create_tf_idf(self.x_train)
         elif self.model_type == "word2vec":
             self.data_transformer = create_word2vec(self.x_train)
-        elif self.model_type == "glove":
+        elif self.model_type == "glove-avg":
             self.data_transformer = glove_avg_embedding(self.x_train)
-
+        elif self.model_type == "glove-padd":
+            self.data_transformer = glove_padd_embedding(self.x_train)
 
     def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
         lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
         upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
         return df_to_slice[lower_index:upper_index]
-
 
     def train_model(self) -> None:
         self.init_model()
@@ -93,7 +94,7 @@ class Model:
             elif self.model_type == "tfidf":
                 X_train = transform_tf_idf(X_train, self.data_transformer)
                 X_val = transform_tf_idf(X_val, self.data_transformer)
-            elif self.model_type == "glove":
+            elif self.model_type == "glove-avg":
                 pass
 
             y_train = self.encoder.transform(y_train)
@@ -104,21 +105,38 @@ class Model:
 
             self.model.fit(X_train, y_train, epochs=15, validation_data=(X_val, y_val))
             gc.collect()
+        print("saving")
+        self.model.save("model.keras", overwrite=True)
+        print("testing")
         self.test_model()
 
     def test_model(self) -> None:
-        if self.model_type == "word2vec_train":
-            self.x_test = embed_df_word2vec(self.x_test, self.data_transformer)
-        elif self.model_type == "tfidf":
-            self.x_test = transform_tf_idf(self.x_test, self.data_transformer)
-        elif self.model_type == "glove":
-            pass
+        accuracy_list = []
+        for i in range(int(1 // self.batch_ratio)):
+            X_test = self.slice_batch(self.x_test, i)
+            y_test = self.slice_batch(self.y_test, i)
 
-        self.y_test = self.encoder.transform(self.y_test)
-        self.x_test[stylometry_names] = self.scaler.transform(self.x_test[stylometry_names])
+            if self.model_type == "word2vec_train":
+                X_test = embed_df_word2vec(X_test, self.data_transformer)
+            elif self.model_type == "tfidf":
+                X_test = transform_tf_idf(X_test, self.data_transformer)
+            elif self.model_type == "glove-avg":
+                pass
 
-        self.model.evaluate(self.x_test, self.y_test)
+            y_test = self.encoder.transform(y_test)
+            X_test[stylometry_names] = self.scaler.transform(X_test[stylometry_names])
 
+            results = self.model.evaluate(X_test, y_test, verbose=0)
+            accuracy_list.append(results[1])
+            gc.collect()
+
+        final_accuracy = np.mean(accuracy_list)
+        print(f"Final accuracy is {final_accuracy}")
+
+    def evaluate_load_model(self, path: str) -> None:
+        self.model = keras.models.load_model(path)
+
+        self.test_model()
 
 
 def batch_generator(X_data, y_data, batch_size, steps):
@@ -135,7 +153,7 @@ def batch_generator(X_data, y_data, batch_size, steps):
 
 def prepare_data(df: pd.DataFrame, model: str) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame):
     df.drop(columns=['path'], inplace=True)
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.1)
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2)
     X_train = calculate_stylometry(X_train)
     X_test = calculate_stylometry(X_test)
@@ -154,7 +172,7 @@ def prepare_data(df: pd.DataFrame, model: str) -> (pd.DataFrame, pd.DataFrame, p
         X_test = transform_tf_idf(X_test, tfidf_vectorizer)
         X_val = transform_tf_idf(X_val, tfidf_vectorizer)
 
-    elif model == "glove":
+    elif model == "glove-avg":
         pass
 
     encoder = LabelBinarizer()
@@ -231,13 +249,13 @@ def train_model(df: pd.DataFrame, model: str):
     print(accuracy_score(test_y_labels, pred_y_labels))"""
 
 
-
 def baseline(df):
     X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender', "path"]), df['sender'],
                                                         test_size=0.2)
     clf = MultinomialNB(force_alpha=True)
     clf.fit(X_train, y_train)
     print(clf.score(X_test, y_test))
+
 
 # gather_corpus("enron_mail/maildir")
 
@@ -248,9 +266,10 @@ df = pd.read_csv("corpus.csv", index_col=0)
 # calculate_stylometry(df)
 # df.to_csv("corpus.csv")
 
-model = Model(model_type="tfidf", batch_ratio=0.1)
-model.fit_data(df)
+model = Model(model_type="word2vec", batch_ratio=0.05)
+model.fit_data(df[0:len(df)//10])
 model.train_model()
+# model.evaluate_load_model("model.keras")
 # create_word2vec(df)
 # baseline(df)
 # train_model(df[0:len(df)], "tfidf")

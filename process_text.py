@@ -84,6 +84,16 @@ def transform_tf_idf(transform_df: pd.DataFrame, tfidf_vectorizer: TfidfVectoriz
     return df
 
 
+def glove_padd_embedding(df: pd.DataFrame, padd: int) -> pd.DataFrame:
+    df_len = len(df)
+    for row_index in range(df_len):
+        pass
+
+
+
+
+
+
 corpus = pd.read_csv("small_corpus.csv", index_col=0)
 # glove_avg_corpus = glove_avg_embedding(corpus)
 # glove_avg_corpus.to_csv("corpus_glove_avg.csv")
