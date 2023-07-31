@@ -178,10 +178,11 @@ def load_email_address(file_path: str, email_list: list[list[str]], address: set
         return sender
 
 
-# gather_user_emails()
-# gather_corpus("enron_mail", "corpus.csv")
-# data = pd.read_csv("corpus.csv", index_col=0)
+if __name__ == "__main__":
+    gather_user_emails()
+    gather_corpus("enron_mail", "corpus.csv")
+    # data = pd.read_csv("corpus.csv", index_col=0)
 
 
-# check proč gather addresses nevzalo rodrigue
+    # check proč gather addresses nevzalo rodrigue
 

@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from gensim.models.doc2vec import TaggedDocument, Doc2Vec
 from gensim.models import Word2Vec
 from nltk import word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -7,7 +8,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 def glove_load() -> dict[str, np.ndarray]:
     embedding_dict={}
-    with open('glove.840B.300d.txt','r') as f:
+    with open('glove.840B.300d.txt','r', encoding="utf-8") as f:
         for line in f:
             values=line.split()
             word=values[0]
@@ -23,12 +24,13 @@ def embed_word_glove(word: str, embedding_dict: dict[str, np.ndarray]) -> np.nda
     return embedding_dict.get(word, np.zeros(300))
 
 
-def glove_avg_embedding(df_to_embed: pd.DataFrame) -> pd.DataFrame:
-    embedding_dict = glove_load()
-    df_to_embed["avg_embedding"] = df_to_embed["text"].apply(lambda x: np.mean([embed_word_glove(word, embedding_dict) for word in x.split()], axis=0))
-    split_df = pd.DataFrame(df_to_embed['avg_embedding'].tolist())
-    df_to_embed.drop(columns=["avg_embedding"], inplace=True)
+def glove_avg_embedding(df_to_embed: pd.DataFrame, embedding_dict: dict[str:list[float]]) -> pd.DataFrame:
+    df_to_embed = df_to_embed.copy()
+    df_to_embed.loc[:, "avg_embedding"] = df_to_embed["text"].apply(lambda x: np.mean([embed_word_glove(word, embedding_dict) for word in x.split()], axis=0))
+    split_df = pd.DataFrame(df_to_embed['avg_embedding'].tolist(), index=df_to_embed.index)
+    df_to_embed = df_to_embed.drop(columns=["avg_embedding"], inplace=False)
     df_to_embed = pd.concat([df_to_embed, split_df], axis=1)
+    df_to_embed = df_to_embed.drop(columns=["text"], inplace=False)
     return df_to_embed
 
 
@@ -56,12 +58,13 @@ def embed_word_word2vec(word: str, w2v_model: Word2Vec) -> np.ndarray:
 
 
 def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.DataFrame:
-    df_to_embed["avg_embedding"] = df_to_embed["text"].apply(
-        lambda x: np.mean([embed_word_word2vec(word, w2v_model) for word in x.split()], axis=0))
-    df_to_embed.drop(columns=["text"], inplace=True)
+    df_to_embed = df_to_embed.copy()
+    avg_embedding = df_to_embed["text"].apply(lambda x: np.mean([embed_word_word2vec(word, w2v_model) for word in x.split()], axis=0))
+    df_to_embed.loc[:, "avg_embedding"] = avg_embedding
+    df_to_embed = df_to_embed.drop(columns=["text"], inplace=False)
     split_df = pd.DataFrame(df_to_embed['avg_embedding'].tolist(), index=df_to_embed.index)
     df_to_embed = pd.concat([df_to_embed, split_df], axis=1)
-    df_to_embed.drop(columns=["avg_embedding"], inplace=True)
+    df_to_embed = df_to_embed.drop(columns=["avg_embedding"], inplace=False)
     return df_to_embed
 
 
@@ -90,10 +93,28 @@ def glove_padd_embedding(df: pd.DataFrame, padd: int) -> pd.DataFrame:
         pass
 
 
+def create_doc2vec(df: pd.DataFrame) -> Doc2Vec:
+    texts = df["text"].tolist()
+    tagged_data = [TaggedDocument(words=word_tokenize(_d), tags=[str(i)]) for i, _d in enumerate(texts)]
+    model = Doc2Vec(vector_size=1024, min_count=2, epochs=30, workers=7)
+    model.build_vocab(tagged_data)
+    model.train(tagged_data, total_examples=model.corpus_count, epochs=model.epochs)
+    return model
 
 
+def embed_doc2vec(df: pd.DataFrame, model: Doc2Vec) -> pd.DataFrame:
+    df = df.copy()
+    df["doc2vec"] = df["text"].apply(lambda x: model.infer_vector(word_tokenize(x)))
+    split_df = pd.DataFrame(df['doc2vec'].tolist(), index=df.index)
+    df = df.drop(columns=["doc2vec"], inplace=False)
+    df = pd.concat([df, split_df], axis=1)
+    df = df.drop(columns=["text"], inplace=False)
+    return df
 
 
-corpus = pd.read_csv("small_corpus.csv", index_col=0)
-# glove_avg_corpus = glove_avg_embedding(corpus)
-# glove_avg_corpus.to_csv("corpus_glove_avg.csv")
+if __name__ == "__main__":
+    corpus = pd.read_csv("corpus.csv", index_col=0)
+    # glove_avg_corpus = glove_avg_embedding(corpus)
+    # glove_avg_corpus.to_csv("corpus_glove_avg.csv")
+    create_doc2vec(corpus[:10000])
+

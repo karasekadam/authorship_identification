@@ -3,6 +3,9 @@ from nltk.corpus import stopwords
 import pandas as pd
 import time
 
+# import nltk
+# nltk.download('stopwords')
+
 
 def num_of_words(text: str) -> int:
     return len(re.findall(r'\w+', text))
