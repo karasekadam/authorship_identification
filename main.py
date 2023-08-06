@@ -1,12 +1,12 @@
 import os
 import numpy as np
 import pandas as pd
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
+from keras.utils import pad_sequences
 from keras import Sequential, Model
 from keras.layers import Dense, Input, Concatenate, Dropout, LSTM, Embedding, Flatten, Bidirectional, MaxPooling1D, Softmax
 from keras.models import load_model
 from keras.initializers import Constant
+from keras.preprocessing.text import Tokenizer
 from stylometry import calculate_stylometry
 from data_loader import gather_corpus
 import process_text
@@ -21,6 +21,9 @@ import gc
 # import nltk
 # nltk.download('stopwords')
 # nltk.download('punkt')
+
+import tensorflow as tf
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
 
 stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
@@ -234,16 +237,15 @@ def lstm_model(df: pd.DataFrame):
     model = Sequential()
     model.add(Embedding(input_dim=vocab_size, output_dim=embed_dim, input_length=max_len,
                         embeddings_initializer=Constant(embed_matrix)))
-    model.add(Bidirectional(LSTM(512, return_sequences=True)))  # loss stucks at about
-    model.summary()
-    # model.add(MaxPooling1D())
+    model.add(Bidirectional(LSTM(256, return_sequences=True)))  # loss stucks at about
+    model.add(MaxPooling1D(pool_size=4, padding='valid'))
+    model.add(Flatten())
     model.add(Dropout(0.50))
     model.add(Softmax())
     model.add(Dense(256, activation='relu'))
     model.add(Dropout(0.50))
-    # model.add(Softmax())
     # model.add(Flatten())
-    model.add(Dense(encoder.classes_.shape[0], activation='sigmoid'))  # sigmod for bin. classification.
+    model.add(Dense(encoder.classes_.shape[0], activation='softmax'))  # sigmod for bin. classification.
 
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.summary()
@@ -261,8 +263,8 @@ if __name__ == "__main__":
     # df.to_csv("corpus_processed.csv")
 
     df = pd.read_csv("corpus.csv", index_col=0)
-    df = df[0:len(df)//100]
-    lstm_model(df)
+    # df = df[0:len(df)//50]
+    # lstm_model(df)
 
     # word2vec_model = process_text.create_word2vec(df)
     # df = process_text.embed_df_word2vec(df, word2vec_model)
@@ -270,9 +272,9 @@ if __name__ == "__main__":
     # calculate_stylometry(df)
     # df.to_csv("corpus.csv")
 
-    # model = Model(model_type="word2vec-avg", batch_ratio=0.05)
-    # model.fit_data(df)
-    # model.train_model()
+    model = MyModel(model_type="tfidf", batch_ratio=0.05)
+    model.fit_data(df)
+    model.train_model()
     # model.evaluate_load_model("model.keras")
     # create_word2vec(df)
     # baseline(df)
