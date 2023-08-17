@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+from keras.src.optimizers import Adam
 from keras.utils import pad_sequences
 from keras import Sequential, Model
 from keras.layers import Dense, Input, Concatenate, Dropout, LSTM, Embedding, Flatten, Bidirectional, MaxPooling1D, Softmax
@@ -16,14 +17,12 @@ from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import MultinomialNB
 from math import floor
 import gc
+from sklearn.ensemble import RandomForestClassifier
 
 # needed for new environment
 # import nltk
 # nltk.download('stopwords')
 # nltk.download('punkt')
-
-import tensorflow as tf
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
 
 stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
@@ -65,8 +64,9 @@ class MyModel:
         model.add(Dense(128, activation='relu'))
         model.add(Dense(64, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
+        model.summary()
 
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df.drop(columns=['path'], inplace=False)
@@ -128,10 +128,43 @@ class MyModel:
             X_train[stylometry_names] = self.scaler.transform(X_train[stylometry_names])
             X_val[stylometry_names] = self.scaler.transform(X_val[stylometry_names])
 
-            self.model.fit(X_train, y_train, epochs=15, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
             gc.collect()
         print("saving")
         self.model.save("model.keras", overwrite=True)
+        print("testing")
+        self.test_model()
+
+        for i in range(int(1//self.batch_ratio)):
+            print("Batch: ", i)
+
+            X_train = self.slice_batch(self.x_train, i)
+            X_val = self.slice_batch(self.x_val, i)
+            y_train = self.slice_batch(self.y_train, i)
+            y_val = self.slice_batch(self.y_val, i)
+
+            if self.model_type == "word2vec-avg":
+                X_train = process_text.embed_df_word2vec(X_train, self.data_transformer)
+                X_val = process_text.embed_df_word2vec(X_val, self.data_transformer)
+            elif self.model_type == "tfidf":
+                X_train = process_text.transform_tf_idf(X_train, self.data_transformer)
+                X_val = process_text.transform_tf_idf(X_val, self.data_transformer)
+            elif self.model_type == "glove-avg":
+                X_train = process_text.glove_avg_embedding(X_train, self.data_transformer)
+                X_val = process_text.glove_avg_embedding(X_val, self.data_transformer)
+            elif self.model_type == "doc2vec":
+                X_train = process_text.embed_doc2vec(X_train, self.data_transformer)
+                X_val = process_text.embed_doc2vec(X_val, self.data_transformer)
+
+            y_train = self.encoder.transform(y_train)
+            y_val = self.encoder.transform(y_val)
+
+            X_train[stylometry_names] = self.scaler.transform(X_train[stylometry_names])
+            X_val[stylometry_names] = self.scaler.transform(X_val[stylometry_names])
+
+            self.model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
+            gc.collect()
+
         print("testing")
         self.test_model()
 
@@ -187,11 +220,11 @@ def baseline(df):
 
 
 def lstm_model(df: pd.DataFrame):
-    df = df.drop(columns=['path'] + stylometry_names, inplace=False)
+    df = df.drop(columns=['path'], inplace=False)
 
     x_train, x_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2,
                                                                             random_state=42)
-    x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
+    x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4, random_state=42)
 
     encoder = LabelBinarizer()
     y_train = encoder.fit_transform(y_train)
@@ -223,10 +256,12 @@ def lstm_model(df: pd.DataFrame):
     pad_rev = pad_sequences(encd_rev, maxlen=max_len, padding='post')
     print(pad_rev.shape)  # note that we had 100K reviews and we have padded each review to have  a lenght of 1565 words.
 
-    x_train = pad_rev[x_train.index]
-    x_test = pad_rev[x_test.index]
-    x_val = pad_rev[x_val.index]
-
+    x_train_input1 = pad_rev[x_train.index]
+    x_train_input2 = x_train[stylometry_names]
+    x_test_input1 = pad_rev[x_test.index]
+    x_test_input2 = x_test[stylometry_names]
+    x_val_input1 = pad_rev[x_val.index]
+    x_val_input2 = x_val[stylometry_names]
 
     embed_matrix = np.zeros(shape=(vocab_size, embed_dim))
     for word, i in tok.word_index.items():
@@ -234,26 +269,67 @@ def lstm_model(df: pd.DataFrame):
         if embed_vector is not None:  # word is in the vocabulary learned by the w2v model
             embed_matrix[i] = embed_vector
 
-    model = Sequential()
-    model.add(Embedding(input_dim=vocab_size, output_dim=embed_dim, input_length=max_len,
-                        embeddings_initializer=Constant(embed_matrix)))
-    model.add(Bidirectional(LSTM(256, return_sequences=True)))  # loss stucks at about
-    model.add(MaxPooling1D(pool_size=4, padding='valid'))
-    model.add(Flatten())
-    model.add(Dropout(0.50))
-    model.add(Softmax())
-    model.add(Dense(256, activation='relu'))
-    model.add(Dropout(0.50))
-    # model.add(Flatten())
-    model.add(Dense(encoder.classes_.shape[0], activation='softmax'))  # sigmod for bin. classification.
+    print(y_val.sum(axis=0) / len(y_val))
+    print(sum(y_val.sum(axis=0) / len(y_val)))
 
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    input1 = Input(shape=(max_len, ))
+    embed = Embedding(input_dim=vocab_size, output_dim=embed_dim, input_length=max_len,
+                        embeddings_initializer=Constant(embed_matrix))(input1)
+    lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
+    maxpool = MaxPooling1D(pool_size=4, padding='valid')(lstm)
+    flatten = Flatten()(maxpool)
+    drop = Dropout(0.50)(flatten)
+    softmax = Softmax()(drop)
+
+    input2 = Input(shape=(len(stylometry_names),))
+    merged = Concatenate()([softmax, input2])
+
+    dense = Dense(256, activation='relu')(merged)
+    dropout = Dropout(0.50)(dense)
+    output = Dense(encoder.classes_.shape[0], activation='softmax')(dropout)
+    # merged.add(Dense(256, activation='relu'))
+    # merged.add(Dropout(0.50))
+    # model.add(Flatten())
+    # merged.add(Dense(encoder.classes_.shape[0], activation='softmax'))  # sigmod for bin. classification.
+    model = Model(inputs=[input1, input2], outputs=output)
+    model.summary()
+    model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-6), metrics=['accuracy'])
     model.summary()
 
-    model.fit(x_train, y_train, epochs=10, validation_data=(x_val, y_val))
+    model.fit([x_train_input1, x_train_input2], y_train, epochs=100, validation_data=([x_val_input1, x_val_input2], y_val))
 
-    results = model.evaluate(x_test, y_test, verbose=0)
+    results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
     print(results)
+
+
+def tfidf_random_forest(df: pd.DataFrame):
+    df = df.drop(columns=['path'], inplace=False)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2,
+                                                                            random_state=42)
+
+    encoder = LabelBinarizer()
+    encoder.fit(y_train)
+    scaler = MinMaxScaler()
+    numerical_data = X_train[stylometry_names]
+    scaler.fit(numerical_data)
+
+    data_transformer = process_text.create_tf_idf(X_train)
+    # input_dim = data_transformer.idf_.shape[0] + len(stylometry_names) - 1
+
+    # x_train_input1 = data_transformer.transform(X_train['text'])
+
+    X_train = process_text.transform_tf_idf(X_train, data_transformer)
+    X_test = process_text.transform_tf_idf(X_test, data_transformer)
+
+    y_train = encoder.transform(y_train)
+    y_test = encoder.transform(y_test)
+
+    X_train[stylometry_names] = scaler.transform(X_train[stylometry_names])
+
+    clf = RandomForestClassifier(random_state=42, n_estimators=100, min_samples_split=2, bootstrap=True,
+                                 criterion="gini", min_samples_leaf=1)
+    clf.fit(X_train, y_train)
+    print(clf.score(X_test, y_test))
 
 
 if __name__ == "__main__":
@@ -263,14 +339,18 @@ if __name__ == "__main__":
     # df.to_csv("corpus_processed.csv")
 
     df = pd.read_csv("corpus.csv", index_col=0)
-    # df = df[0:len(df)//50]
+    df = df.dropna()
+    df = calculate_stylometry(df)
+    df.to_csv("corpus.csv")
+
+    # df = df.sample(n=len(df) // 3).reset_index(drop=True)
+    # tfidf_random_forest(df)
+    #
+    # print(len(df))
     # lstm_model(df)
 
     # word2vec_model = process_text.create_word2vec(df)
     # df = process_text.embed_df_word2vec(df, word2vec_model)
-    # df = df.drop(columns=["path", "sender"] + stylometry_names)
-    # calculate_stylometry(df)
-    # df.to_csv("corpus.csv")
 
     model = MyModel(model_type="tfidf", batch_ratio=0.05)
     model.fit_data(df)

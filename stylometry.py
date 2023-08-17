@@ -8,6 +8,8 @@ import time
 
 
 def num_of_words(text: str) -> int:
+    if text is None:
+        return 0
     return len(re.findall(r'\w+', text))
 
 
@@ -93,4 +95,10 @@ def calculate_stylometry(df: pd.DataFrame) -> pd.DataFrame:
     df["num_of_digits"] = df["text"].apply(num_of_digits)
     print(time.time())
     return df
+
+
+if __name__ == "__main__":
+    df = pd.read_csv("corpus.csv")
+    df = calculate_stylometry(df)
+    df.to_csv("corpus.csv")
 

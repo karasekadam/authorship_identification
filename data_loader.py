@@ -30,6 +30,7 @@ def process_text(full_email_text: str) -> str:
                 email_body_start = line_number + 1
                 break
     email_text = "\n".join(by_enter[email_body_start:])
+
     return email_text
 
 
@@ -37,7 +38,7 @@ def gather_corpus(path: str, final_file_name: str) -> pd.DataFrame:
     st = time.time()
     # only emails from these senders are to be processed
     users_emails = set(pd.read_csv("emails.csv")["email"])
-    email_translator_df = pd.read_csv("emails_translator.csv")
+    email_translator_df = pd.read_csv("emails_translator.csv", index_col=0)
     emails_to_translate = set(email_translator_df["email"])
 
     # loads emails from dataset
@@ -67,7 +68,7 @@ def load_from_dir(path: str, email_list: list[list[str]], user_addresses: set[st
 
 def load_emails(path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str]
                   , email_translator: pd.DataFrame) -> None:
-    if "to_do" in path: # asi nějaký automatický emaily generovaný
+    if "to_do" in path:  # asi nějaký automatický emaily generovaný
         return
         # možná i calendar by se měl vyfiltrovat?
     dir_list = os.listdir(path)
@@ -79,24 +80,59 @@ def load_emails(path: str, email_list: list[list[str]], user_addresses: set[str]
             load_email(path + '/' + file, email_list, user_addresses, translatable_addresses, email_translator, code="latin-1")
 
 
+key_words_for_slicing = ["--- Forwarded by", "--- Original Message", "--- Original Appointment", "---Forwarded by",
+                         "---Original Message", "---Original Appointment"]
+
+
+def slice_text(text: str) -> str:
+    lowest_position = None
+    for key_word in key_words_for_slicing:
+        search_end = len(text) if lowest_position is None else lowest_position
+        index = text.find(key_word, 0, search_end)
+        if index != -1:
+            if lowest_position is None or index < lowest_position:
+                lowest_position = index
+
+    if lowest_position is None:
+        return text
+
+    position_to_slice = lowest_position
+    while position_to_slice > 0 and text[position_to_slice] == "-":
+        position_to_slice -= 1
+
+    return text[:position_to_slice]
+
+
+def check_existing_text(text: str) -> bool:
+    check_text = text.replace(" ", "")
+    check_text = check_text.replace("\n", "")
+    if len(check_text) < 1:
+        return False
+    return True
+
+
 def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str]
                   , email_translator: pd.DataFrame, code="utf-8") -> None:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
-        if "--- Forwarded by " in text or "-----Original Message" in text or "-----Original Appointment" in text:
-            return
-            # potom předělat na jenom slice po klíčový slova
+        text = slice_text(text)
+
         sender_index_start = text.find("From: ")
         if sender_index_start == -1:
             raise Exception("Sender is missing")
         sender = text[sender_index_start + 6: text.find("\n", sender_index_start)]
-        if sender in user_addresses:
-            email_text = process_text(text)
-            email_list.append([sender, email_text, file_path])
-        elif sender in translatable_addresses:
-            translate_to = email_translator[email_translator["email"] == sender]["main_email"].values[0]
-            email_text = process_text(text)
-            email_list.append([translate_to, email_text, file_path])
+
+        email_text = process_text(text)
+        if not check_existing_text(email_text):
+            return
+
+        if sender not in user_addresses:
+            translation_email = email_translator[email_translator["email"] == sender]["main_email"]
+            if len(translation_email) == 0:
+                return
+            sender = translation_email.values[0]
+
+        email_list.append([sender, email_text, file_path])
 
 
 def gather_user_emails():
@@ -106,7 +142,6 @@ def gather_user_emails():
     address_final = []
     address_translator = []
     for dir_name in dirs:
-        print(dir_name)
         emails = []
         address = set()
         load_from_dir_address(path + '/' + dir_name, emails, address)
@@ -115,25 +150,18 @@ def gather_user_emails():
             for email in address:
                 if email and dir_name.split("-")[0] in email:
                     checked_addresses.append(email)
-        email_df = pd.DataFrame(emails, columns=['sender', 'text', 'path'])
+        email_df = pd.DataFrame(emails, columns=['sender'])
         if len(checked_addresses) > 0:
             if len(checked_addresses) > 1:
-                emails_ordered = email_df.groupby("sender").count().sort_values(by="text", ascending=False)
+                emails_ordered = email_df.groupby("sender").size().sort_values(ascending=False)
                 main_address = emails_ordered.index[0]
                 address_final.append(main_address)
-                print(main_address)
                 for address in checked_addresses:
                     if address != main_address:
                         address_translator.append([address, main_address])
             else:
                 address_final.append(checked_addresses[0])
-                print(checked_addresses[0])
-        print("")
 
-    print(address_final)
-    print(address_translator)
-    print(len(address_final))
-    print(len(address_translator))
     emails_df = pd.DataFrame(address_final, columns=['email'])
     emails_df.to_csv("emails.csv")
     emails_df = pd.DataFrame(address_translator, columns=['email', 'main_email'])
@@ -163,26 +191,37 @@ def load_emails_address(path: str, email_list: list[list[str]], address: set[str
 def load_email_address(file_path: str, email_list: list[list[str]], address: set[str], code="utf-8") -> str:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
-        # if "--- Forwarded by " in text or "-----Original Message" in text or "-----Original Appointment" in text:
-        #     return
         sender_index_start = text.find("From: ")
         if sender_index_start == -1:
             raise Exception("Sender is missing")
+
         sender = text[sender_index_start + 6: text.find("\n", sender_index_start)]
         if sender == 'no.address@enron.com':
             return
         if sender == 'brenda.whitehead@enron.com':
             pass
-        email_text = process_text(text)
-        email_list.append([sender, email_text, file_path])
+        # email_text = process_text(text)
+        email_list.append([sender])
         return sender
 
 
+def filter_most_used_emails(n: int) -> None:
+    data = pd.read_csv("corpus.csv", index_col=0)
+    data_grouped = data.groupby("sender").size().sort_values(ascending=False)
+    data_grouped.to_csv("corpus_grouped.csv")
+    first_n_emails = list(data_grouped.head(n).index)
+    data = data[data['sender'].isin(first_n_emails)]
+    data.to_csv("corpus" + str(n) + ".csv")
+
+
 if __name__ == "__main__":
-    gather_user_emails()
-    gather_corpus("enron_mail", "corpus.csv")
-    # data = pd.read_csv("corpus.csv", index_col=0)
-
-
+    pass
+    # gather_user_emails()
+    # gather_corpus("enron_mail", "corpus.csv")
+    # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 
+
+signature = {
+    "semperger-c": "C"
+}

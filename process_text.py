@@ -50,6 +50,23 @@ def create_word2vec(train_df: pd.DataFrame) -> Word2Vec:
     return w2v_model
 
 
+def create_word2vec_letters(train_df: pd.DataFrame) -> Word2Vec:
+    text_list = train_df["text"].tolist()
+    text_list = [text.replace(" ", "") for text in text_list]
+    just_text = [[*text] for text in text_list]
+    w2v_model = Word2Vec(min_count=5,
+                         window=5,
+                         vector_size=256,
+                         sample=6e-5,
+                         alpha=0.03,
+                         min_alpha=0.0007,
+                         negative=20)
+
+    w2v_model.build_vocab(just_text)
+    w2v_model.train(just_text, total_examples=w2v_model.corpus_count, epochs=5, report_delay=1)
+    return w2v_model
+
+
 def embed_word_word2vec(word: str, w2v_model: Word2Vec) -> np.ndarray:
     if word in w2v_model.wv:
         return w2v_model.wv[word]
@@ -113,8 +130,9 @@ def embed_doc2vec(df: pd.DataFrame, model: Doc2Vec) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    corpus = pd.read_csv("corpus.csv", index_col=0)
+    corpus = pd.read_csv("corpus.csv", index_col=0)[:10000]
     # glove_avg_corpus = glove_avg_embedding(corpus)
     # glove_avg_corpus.to_csv("corpus_glove_avg.csv")
-    create_doc2vec(corpus[:10000])
+    print([*"hello\n fds".replace(" ", "")])
+    create_word2vec_letters(corpus)
 
