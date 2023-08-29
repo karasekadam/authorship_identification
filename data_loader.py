@@ -1,7 +1,12 @@
 import os
 import time
-
+import re
 import pandas as pd
+
+
+header_metadata_columns = ["time", "subject_num_of_words", "subject_num_of_char", "subject_num_of_uppercase_char",
+                           "num_od_numeric_char", "num_of_punctuation_marks", "num_of_addressees",
+                           "num_of_addressees_from_same_domain", "num_of_cc", "num_of_cc_from_same_domain"]
 
 
 def load_corpus(path):
@@ -46,7 +51,7 @@ def gather_corpus(path: str, final_file_name: str) -> pd.DataFrame:
     load_from_dir(path, email_list, users_emails, emails_to_translate, email_translator_df)
 
     # saves emails to csv
-    email_df = pd.DataFrame(email_list, columns=['sender', 'text', 'path'])
+    email_df = pd.DataFrame(email_list, columns=['sender', 'text', 'path'] + header_metadata_columns)
     email_df[["sender", "text"]].duplicated(keep="first")
     email_df.to_csv(final_file_name)
     print(email_df[["path", "text"]])
@@ -111,17 +116,83 @@ def check_existing_text(text: str) -> bool:
     return True
 
 
-def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str]
-                  , email_translator: pd.DataFrame, code="utf-8") -> None:
+def email_subject(text: str) -> list[int]:
+    subject_index_start = text.find("Subject: ")
+    if subject_index_start == -1:
+        return [0, 0, 0, 0, 0]
+
+    subject_index_end_mime = text.find("Mime-Version:", subject_index_start)
+    subject_index_end_cc = text.find("Cc:", subject_index_start)
+    if subject_index_end_mime == -1 and subject_index_end_cc == -1:
+        return [0, 0, 0, 0, 0]
+    elif subject_index_end_mime == -1:
+        subject_index_end = subject_index_end_cc
+    elif subject_index_end_cc == -1:
+        subject_index_end = subject_index_end_mime
+    else:
+        subject_index_end = min(subject_index_end_mime, subject_index_end_cc)
+
+    subject = text[subject_index_start + 9: subject_index_end]
+    number_of_words = len(subject.split(" "))
+    number_of_characters = len(subject)
+    number_of_uppercase_characters = sum(1 for c in subject if c.isupper())
+    number_od_numeric_characters = sum(1 for c in subject if c.isnumeric())
+    number_of_punctuation_marks = sum(1 for c in subject if c in [".", ",", "!", "?", ";", ":", "-", "_", "(", ")"])
+
+    return [number_of_words, number_of_characters, number_of_uppercase_characters, number_od_numeric_characters,
+            number_of_punctuation_marks]
+
+
+def email_addressee(text: str, author_email: str) -> list[int]:
+    addressee_metadata = [0, 0, 0, 0]
+
+    addressee_index_start = text.find("To: ")
+    addressee_index_end = text.find("Subject:", addressee_index_start)
+    if addressee_index_end != -1 and addressee_index_start != -1:
+        addressee_text = text[addressee_index_start + 4: addressee_index_end]
+        addressee = re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', addressee_text)
+        addressee_metadata[0] = len(addressee)
+        addressee_metadata[1] = sum([1 for email in addressee if author_email.split("@")[1] in email])
+
+    cc_index_start = text.find("Cc: ")
+    cc_index_end = text.find("Mime-Version:", cc_index_start)
+    if cc_index_end != -1 and cc_index_start != -1:
+        cc_text = text[cc_index_start + 4: cc_index_end]
+        cc = re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', cc_text)
+        addressee_metadata[2] = len(cc)
+        addressee_metadata[3] = sum([1 for email in cc if author_email.split("@")[1] in email])
+
+    return addressee_metadata
+
+
+def process_time(text: str) -> int:
+    date_index_start = text.find("Date: ")
+    time_text = text[date_index_start + 23: date_index_start + 25].replace(":", "")
+    return int(time_text)
+
+
+def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str],
+               email_translator: pd.DataFrame, code="utf-8") -> None:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
         text = slice_text(text)
 
+        # gets sender
         sender_index_start = text.find("From: ")
         if sender_index_start == -1:
             raise Exception("Sender is missing")
         sender = text[sender_index_start + 6: text.find("\n", sender_index_start)]
 
+        # process time
+        time = process_time(text)
+
+        # process subject
+        subject_data = email_subject(text)
+
+        # process addressee
+        addressee_data = email_addressee(text, sender)
+
+        # gets email text
         email_text = process_text(text)
         if not check_existing_text(email_text):
             return
@@ -132,7 +203,7 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
                 return
             sender = translation_email.values[0]
 
-        email_list.append([sender, email_text, file_path])
+        email_list.append([sender, email_text, file_path, time] + subject_data + addressee_data)
 
 
 def gather_user_emails():
@@ -218,7 +289,7 @@ if __name__ == "__main__":
     pass
     # gather_user_emails()
     # gather_corpus("enron_mail", "corpus.csv")
-    # filter_most_used_emails(5)
+    filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 
 

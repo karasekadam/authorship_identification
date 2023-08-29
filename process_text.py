@@ -88,10 +88,6 @@ def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.Data
 def create_tf_idf(corpus_df: pd.DataFrame) -> TfidfVectorizer:
     data = corpus_df["text"].tolist()
     tfidf_vectorizer = TfidfVectorizer(lowercase=True, stop_words="english")
-    tfidf_matrix = tfidf_vectorizer.fit(data)
-    # tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out(), index=corpus_df.index)
-    # df = pd.concat([corpus_df, tfidf_df], axis=1)
-    # df.drop(columns=["text"], inplace=True)
     return tfidf_vectorizer
 
 
@@ -130,9 +126,8 @@ def embed_doc2vec(df: pd.DataFrame, model: Doc2Vec) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    corpus = pd.read_csv("corpus.csv", index_col=0)[:10000]
+    corpus = pd.read_csv("corpus.csv", index_col=0)
     # glove_avg_corpus = glove_avg_embedding(corpus)
     # glove_avg_corpus.to_csv("corpus_glove_avg.csv")
-    print([*"hello\n fds".replace(" ", "")])
     create_word2vec_letters(corpus)
 

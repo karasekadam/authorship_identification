@@ -27,6 +27,10 @@ from sklearn.ensemble import RandomForestClassifier
 
 stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
 
+header_metadata_columns = ["time", "subject_num_of_words", "subject_num_of_char", "subject_num_of_uppercase_char",
+                           "num_od_numeric_char", "num_of_punctuation_marks", "num_of_addressees",
+                           "num_of_addressees_from_same_domain", "num_of_cc", "num_of_cc_from_same_domain"]
+
 
 class MyModel:
     def __init__(self, model_type: str, batch_ratio: float) -> None:
@@ -219,7 +223,32 @@ def baseline(df):
     print(clf.score(X_test, y_test))
 
 
-def lstm_model(df: pd.DataFrame):
+def lstm_model(max_len: int, vocab_size: int, embed_dim: int, embed_matrix, encoder) -> Model:
+    input1 = Input(shape=(max_len,))
+    embed = Embedding(input_dim=vocab_size, output_dim=embed_dim, input_length=max_len,
+                      embeddings_initializer=Constant(embed_matrix))(input1)
+    lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
+    maxpool = MaxPooling1D(pool_size=4, padding='valid')(lstm)
+    flatten = Flatten()(maxpool)
+    drop = Dropout(0.50)(flatten)
+    softmax = Softmax()(drop)
+
+    input2 = Input(shape=(len(stylometry_names + header_metadata_columns),))
+    merged = Concatenate()([softmax, input2])
+
+    dense = Dense(256, activation='relu')(merged)
+    dropout = Dropout(0.50)(dense)
+    output = Dense(encoder.classes_.shape[0], activation='softmax')(dropout)
+    model = Model(inputs=[input1, input2], outputs=output)
+
+    model.summary()
+
+    model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
+    
+    return model
+
+
+def lstm_w2v(df: pd.DataFrame, letters: bool = False, limited_len: bool = True) -> None:
     df = df.drop(columns=['path'], inplace=False)
 
     x_train, x_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2,
@@ -231,24 +260,39 @@ def lstm_model(df: pd.DataFrame):
     y_test = encoder.transform(y_test)
     y_val = encoder.transform(y_val)
 
-    w2v_model = process_text.create_word2vec(x_train)
+    if letters:
+        w2v_model = process_text.create_word2vec_letters(x_train)
+    else:
+        w2v_model = process_text.create_word2vec(x_train)
 
     vocab = w2v_model.wv.key_to_index
     vocab = list(vocab.keys())
     word_vec_dict = {}
     for word in vocab:
         word_vec_dict[word] = w2v_model.wv.get_vector(word)
-    print("The no of key-value pairs : ", len(word_vec_dict))  # should come equal to vocab size
 
-    x_train["len"] = x_train["text"].apply(lambda x: len(x.split()))
-    text_data = x_train.sort_values(by=["len"], ascending=False)
-    max_len = text_data["len"].iloc[0]
-    print(max_len)
+    if limited_len:
+        max_len = 100
+    else:
+        x_train["len"] = x_train["text"].apply(lambda x: len(x.split()))
+        text_data = x_train.sort_values(by=["len"], ascending=False)
+        max_len = text_data["len"].iloc[0]
+
+    if letters:
+        text_list = x_train["text"].tolist()
+        text_list = [text.replace(" ", "") for text in text_list]
+        just_text = [[*text] for text in text_list]
+
+        df_text = df["text"].tolist()
+        df_text = [text.replace(" ", "") for text in df_text]
+        df_text = [[*text] for text in df_text]
+    else:
+        just_text = x_train['text']
+        df_text = df['text']
 
     tok = Tokenizer()
-    tok.fit_on_texts(x_train['text'])
-    vocab_size = len(tok.word_index) + 1
-    encd_rev = tok.texts_to_sequences(df['text'])
+    tok.fit_on_texts(just_text)
+    encd_rev = tok.texts_to_sequences(df_text)
 
     vocab_size = len(tok.word_index) + 1  # total no of words
     embed_dim = 256  # embedding dimension as choosen in word2vec constructor
@@ -257,11 +301,11 @@ def lstm_model(df: pd.DataFrame):
     print(pad_rev.shape)  # note that we had 100K reviews and we have padded each review to have  a lenght of 1565 words.
 
     x_train_input1 = pad_rev[x_train.index]
-    x_train_input2 = x_train[stylometry_names]
+    x_train_input2 = x_train[stylometry_names + header_metadata_columns]
     x_test_input1 = pad_rev[x_test.index]
-    x_test_input2 = x_test[stylometry_names]
+    x_test_input2 = x_test[stylometry_names + header_metadata_columns]
     x_val_input1 = pad_rev[x_val.index]
-    x_val_input2 = x_val[stylometry_names]
+    x_val_input2 = x_val[stylometry_names + header_metadata_columns]
 
     embed_matrix = np.zeros(shape=(vocab_size, embed_dim))
     for word, i in tok.word_index.items():
@@ -269,37 +313,81 @@ def lstm_model(df: pd.DataFrame):
         if embed_vector is not None:  # word is in the vocabulary learned by the w2v model
             embed_matrix[i] = embed_vector
 
-    print(y_val.sum(axis=0) / len(y_val))
-    print(sum(y_val.sum(axis=0) / len(y_val)))
-
-    input1 = Input(shape=(max_len, ))
-    embed = Embedding(input_dim=vocab_size, output_dim=embed_dim, input_length=max_len,
-                        embeddings_initializer=Constant(embed_matrix))(input1)
-    lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
-    maxpool = MaxPooling1D(pool_size=4, padding='valid')(lstm)
-    flatten = Flatten()(maxpool)
-    drop = Dropout(0.50)(flatten)
-    softmax = Softmax()(drop)
-
-    input2 = Input(shape=(len(stylometry_names),))
-    merged = Concatenate()([softmax, input2])
-
-    dense = Dense(256, activation='relu')(merged)
-    dropout = Dropout(0.50)(dense)
-    output = Dense(encoder.classes_.shape[0], activation='softmax')(dropout)
-    # merged.add(Dense(256, activation='relu'))
-    # merged.add(Dropout(0.50))
-    # model.add(Flatten())
-    # merged.add(Dense(encoder.classes_.shape[0], activation='softmax'))  # sigmod for bin. classification.
-    model = Model(inputs=[input1, input2], outputs=output)
-    model.summary()
-    model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-6), metrics=['accuracy'])
-    model.summary()
+    model = lstm_model(max_len=max_len, vocab_size=vocab_size, embed_dim=embed_dim,
+                       embed_matrix=embed_matrix, encoder=encoder)
 
     model.fit([x_train_input1, x_train_input2], y_train, epochs=100, validation_data=([x_val_input1, x_val_input2], y_val))
 
     results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
     print(results)
+
+
+"""def lstm_letter_w2v(df: pd.DataFrame, limited_len: bool = True):
+    df = df.drop(columns=['path'], inplace=False)
+
+    x_train, x_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2,
+                                                        random_state=42)
+    x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4, random_state=42)
+
+    encoder = LabelBinarizer()
+    y_train = encoder.fit_transform(y_train)
+    y_test = encoder.transform(y_test)
+    y_val = encoder.transform(y_val)
+
+    w2v_model = process_text.create_word2vec_letters(x_train)
+
+    vocab = w2v_model.wv.key_to_index
+    vocab = list(vocab.keys())
+    word_vec_dict = {}
+    for word in vocab:
+        word_vec_dict[word] = w2v_model.wv.get_vector(word)
+
+    # sets len of processed text
+    if limited_len:
+        max_len = 100
+    else:
+        x_train["len"] = x_train["text"].apply(lambda x: len(x.split()))
+        text_data = x_train.sort_values(by=["len"], ascending=False)
+        max_len = text_data["len"].iloc[0]
+
+    text_list = x_train["text"].tolist()
+    text_list = [text.replace(" ", "") for text in text_list]
+    just_text = [[*text] for text in text_list]
+
+    tok = Tokenizer()
+    tok.fit_on_texts(just_text)
+
+    df_text = df["text"].tolist()
+    df_text = [text.replace(" ", "") for text in df_text]
+    df_text = [[*text] for text in df_text]
+    encd_rev = tok.texts_to_sequences(df_text)
+
+    vocab_size = len(tok.word_index) + 1  # total no of words
+    embed_dim = 256  # embedding dimension as choosen in word2vec constructor
+
+    pad_rev = pad_sequences(encd_rev, maxlen=max_len, padding='post')
+
+    x_train_input1 = pad_rev[x_train.index]
+    x_train_input2 = x_train[stylometry_names + header_metadata_columns]
+    x_test_input1 = pad_rev[x_test.index]
+    x_test_input2 = x_test[stylometry_names + header_metadata_columns]
+    x_val_input1 = pad_rev[x_val.index]
+    x_val_input2 = x_val[stylometry_names + header_metadata_columns]
+
+    embed_matrix = np.zeros(shape=(vocab_size, embed_dim))
+    for word, i in tok.word_index.items():
+        embed_vector = word_vec_dict.get(word)
+        if embed_vector is not None:  # word is in the vocabulary learned by the w2v model
+            embed_matrix[i] = embed_vector
+
+    model = lstm_model(max_len=max_len, vocab_size=vocab_size, embed_dim=embed_dim,
+                       embed_matrix=embed_matrix, encoder=encoder)
+
+    model.fit([x_train_input1, x_train_input2], y_train, epochs=100,
+              validation_data=([x_val_input1, x_val_input2], y_val))
+
+    results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
+    print(results)"""
 
 
 def tfidf_random_forest(df: pd.DataFrame):
@@ -333,29 +421,19 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    # gather_corpus("enron_mail/maildir")
-
-    # df = pd.read_csv("corpus_glove_avg.csv", index_col=0)
-    # df.to_csv("corpus_processed.csv")
-
     df = pd.read_csv("corpus.csv", index_col=0)
-    df = df.dropna()
-    df = calculate_stylometry(df)
-    df.to_csv("corpus.csv")
+    lstm_w2v(df, letters=True, limited_len=True)
+    # df = df.dropna()
+    # df = calculate_stylometry(df)
+    # df.to_csv("corpus.csv")
 
     # df = df.sample(n=len(df) // 3).reset_index(drop=True)
     # tfidf_random_forest(df)
-    #
-    # print(len(df))
     # lstm_model(df)
 
     # word2vec_model = process_text.create_word2vec(df)
     # df = process_text.embed_df_word2vec(df, word2vec_model)
 
-    model = MyModel(model_type="tfidf", batch_ratio=0.05)
-    model.fit_data(df)
-    model.train_model()
-    # model.evaluate_load_model("model.keras")
-    # create_word2vec(df)
-    # baseline(df)
-    # train_model(df[0:len(df)], "tfidf")
+    # model = MyModel(model_type="tfidf", batch_ratio=0.05)
+    # model.fit_data(df)
+    # model.train_model()
