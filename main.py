@@ -175,12 +175,13 @@ class MlpModel:
 
 
 class LstmModel:
-    def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256) \
-            -> None:
+    def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
+                 batch_ratio: float = 1) -> None:
         self.df = df
         self.embed_letters = embed_letters
         self.limited_len = limited_len
         self.embed_dim = embed_dim  # size of vector to which words/letters are embedded
+        self.batch_ratio = batch_ratio
 
     # builds neural network architecture for lstm model
     def build_network(self, max_len: int, vocab_size: int, embed_matrix, encoder) -> Model:
@@ -215,6 +216,11 @@ class LstmModel:
             text_data = x_train.sort_values(by=["len"], ascending=False)
             max_len = text_data["len"].iloc[0]
         return max_len
+
+    def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
+        lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
+        upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
+        return df_to_slice[lower_index:upper_index]
 
     def build_embedding_matrix(self, tok: Tokenizer, word_vec_dict: dict, vocab_size: int) -> np.ndarray:
         embed_matrix = np.zeros(shape=(vocab_size, self.embed_dim))
@@ -255,7 +261,7 @@ class LstmModel:
         return word_vec_dict
 
     # lstm model with word2vec embedding, option to use words or letters and length of input text
-    def run_lstm_model(self) -> None:
+    def run_lstm_model(self, ) -> None:
         self.df = df.drop(columns=['path'], inplace=False)
 
         x_train, x_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'],
@@ -292,7 +298,19 @@ class LstmModel:
 
         model = self.build_network(max_len=max_len, vocab_size=vocab_size, embed_matrix=embed_matrix, encoder=encoder)
 
-        model.fit([x_train_input1, x_train_input2], y_train, epochs=100, validation_data=([x_val_input1, x_val_input2], y_val))
+        for i in range(int(1//self.batch_ratio)):
+            print("Batch: ", i)
+
+            x_train_input1_batch = self.slice_batch(x_train_input1, i)
+            x_train_input2_batch = self.slice_batch(x_train_input2, i)
+            y_train_batch = self.slice_batch(y_train, i)
+
+            x_val_input1_batch = self.slice_batch(x_val_input1, i)
+            x_val_input2_batch = self.slice_batch(x_val_input2, i)
+            y_val_batch = self.slice_batch(y_val, i)
+
+            model.fit([x_train_input1_batch, x_train_input2_batch], y_train_batch, epochs=100,
+                      validation_data=([x_val_input1_batch, x_val_input2_batch], y_val_batch))
 
         results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
         print(results)
@@ -326,10 +344,10 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0).sample(frac=0.15).reset_index(drop=True)
-    tfidf_random_forest(df)
-    # lstm_model = LstmModel(df, embed_letters=True, limited_len=True)
-    # lstm_model.run_lstm_model()
+    df = pd.read_csv("corpus.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
+    # tfidf_random_forest(df)
+    lstm_model = LstmModel(df, embed_letters=False, limited_len=False, batch_ratio=0.1)
+    lstm_model.run_lstm_model()
 
     # df = calculate_stylometry(df)
     # df.to_csv("corpus.csv")
