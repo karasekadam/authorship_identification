@@ -309,7 +309,7 @@ class LstmModel:
             x_val_input2_batch = self.slice_batch(x_val_input2, i)
             y_val_batch = self.slice_batch(y_val, i)
 
-            model.fit([x_train_input1_batch, x_train_input2_batch], y_train_batch, epochs=100,
+            model.fit([x_train_input1_batch, x_train_input2_batch], y_train_batch, epochs=1000,
                       validation_data=([x_val_input1_batch, x_val_input2_batch], y_val_batch))
 
         results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
@@ -344,9 +344,9 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
+    df = pd.read_csv("corpus.csv", index_col=0) # .sample(frac=0.1).reset_index(drop=True)
     # tfidf_random_forest(df)
-    lstm_model = LstmModel(df, embed_letters=False, limited_len=False, batch_ratio=0.1)
+    lstm_model = LstmModel(df, embed_letters=False, limited_len=True, batch_ratio=1)
     lstm_model.run_lstm_model()
 
     # df = calculate_stylometry(df)
