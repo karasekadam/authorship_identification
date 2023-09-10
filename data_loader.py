@@ -280,8 +280,10 @@ def filter_most_used_emails(n: int) -> None:
     data = pd.read_csv("corpus.csv", index_col=0)
     data_grouped = data.groupby("sender").size().sort_values(ascending=False)
     data_grouped.to_csv("corpus_grouped.csv")
+
     first_n_emails = list(data_grouped.head(n).index)
     data = data[data['sender'].isin(first_n_emails)]
+    data = data.reset_index(drop=True)
     data.to_csv("corpus" + str(n) + ".csv")
 
 
@@ -289,7 +291,7 @@ if __name__ == "__main__":
     pass
     # gather_user_emails()
     # gather_corpus("enron_mail", "corpus.csv")
-    filter_most_used_emails(5)
+    filter_most_used_emails(50)
     # check proč gather addresses nevzalo rodrigue
 
 

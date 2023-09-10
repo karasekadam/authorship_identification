@@ -421,7 +421,7 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0)
+    df = pd.read_csv("corpus5.csv", index_col=0)
     lstm_w2v(df, letters=True, limited_len=True)
     # df = df.dropna()
     # df = calculate_stylometry(df)
