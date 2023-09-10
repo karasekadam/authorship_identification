@@ -344,7 +344,7 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0) # .sample(frac=0.1).reset_index(drop=True)
+    df = pd.read_csv("corpus5.csv", index_col=0) # .sample(frac=0.1).reset_index(drop=True)
     # tfidf_random_forest(df)
     lstm_model = LstmModel(df, embed_letters=False, limited_len=True, batch_ratio=1)
     lstm_model.run_lstm_model()
