@@ -205,7 +205,7 @@ class LstmModel:
 
         model.summary()
 
-        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
+        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-3), metrics=['accuracy'])
 
         return model
 
@@ -357,6 +357,6 @@ if __name__ == "__main__":
     # tfidf_random_forest(df)
     # lstm_model(df)
 
-    model = MlpModel(model_type="tfidf", batch_ratio=0.1)
+    model = MlpModel(model_type="tfidf", batch_ratio=1)
     model.fit_data(df)
     model.train_model()
