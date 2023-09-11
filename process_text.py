@@ -88,6 +88,7 @@ def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.Data
 def create_tf_idf(corpus_df: pd.DataFrame) -> TfidfVectorizer:
     data = corpus_df["text"].tolist()
     tfidf_vectorizer = TfidfVectorizer(lowercase=True, stop_words="english")
+    tfidf_vectorizer.fit(data)
     return tfidf_vectorizer
 
 

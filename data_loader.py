@@ -182,6 +182,8 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
         if sender_index_start == -1:
             raise Exception("Sender is missing")
         sender = text[sender_index_start + 6: text.find("\n", sender_index_start)]
+        if "@" not in sender:
+            return
 
         # process time
         time = process_time(text)
@@ -259,6 +261,7 @@ def load_emails_address(path: str, email_list: list[list[str]], address: set[str
             address.add(load_email_address(path + '/' + file, email_list, address, code="latin1"))
 
 
+#
 def load_email_address(file_path: str, email_list: list[list[str]], address: set[str], code="utf-8") -> str:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
@@ -271,11 +274,11 @@ def load_email_address(file_path: str, email_list: list[list[str]], address: set
             return
         if sender == 'brenda.whitehead@enron.com':
             pass
-        # email_text = process_text(text)
         email_list.append([sender])
         return sender
 
 
+# filters only n most active senders
 def filter_most_used_emails(n: int) -> None:
     data = pd.read_csv("corpus.csv", index_col=0)
     data_grouped = data.groupby("sender").size().sort_values(ascending=False)
@@ -291,8 +294,11 @@ if __name__ == "__main__":
     pass
     # gather_user_emails()
     # gather_corpus("enron_mail", "corpus.csv")
-    filter_most_used_emails(50)
+    # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
+    df = pd.read_csv("corpus.csv", index_col=0)
+    unique_emails = set(df["sender"])
+    print(len(unique_emails))
 
 
 signature = {
