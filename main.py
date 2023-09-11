@@ -51,15 +51,15 @@ class MlpModel:
 
     def init_model(self) -> None:
         if self.model_type == "tfidf":
-            input_dim = self.data_transformer.idf_.shape[0] + len(stylometry_names) - 1
+            input_dim = self.data_transformer.idf_.shape[0] + len(all_stylometry) - 1
         elif self.model_type == "word2vec-avg":
-            input_dim = self.data_transformer.vector_size + len(stylometry_names)
+            input_dim = self.data_transformer.vector_size + len(all_stylometry)
         elif self.model_type == "glove-avg":
-            input_dim = 300 + len(stylometry_names)
+            input_dim = 300 + len(all_stylometry)
         elif self.model_type == "doc2vec":
-            input_dim = 1024 + len(stylometry_names)
+            input_dim = 1024 + len(all_stylometry)
         elif self.model_type == "glove-padd":
-            input_dim = 300 + len(stylometry_names)
+            input_dim = 300 + len(all_stylometry)
         else:
             input_dim = 1
 
@@ -87,7 +87,7 @@ class MlpModel:
         self.encoder.fit(self.y_train)
         self.scaler = MinMaxScaler()
 
-        numerical_data = self.x_train[stylometry_names]
+        numerical_data = self.x_train[all_stylometry]
         self.scaler.fit(numerical_data)
 
         if self.model_type == "tfidf":
@@ -133,8 +133,8 @@ class MlpModel:
             y_train = self.encoder.transform(y_train)
             y_val = self.encoder.transform(y_val)
 
-            X_train[stylometry_names] = self.scaler.transform(X_train[stylometry_names])
-            X_val[stylometry_names] = self.scaler.transform(X_val[stylometry_names])
+            X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
+            X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
 
             self.model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
             gc.collect()
@@ -161,7 +161,7 @@ class MlpModel:
                 X_test = process_text.embed_doc2vec(X_test, self.data_transformer)
 
             y_test = self.encoder.transform(y_test)
-            X_test[stylometry_names] = self.scaler.transform(X_test[stylometry_names])
+            X_test[all_stylometry] = self.scaler.transform(X_test[all_stylometry])
 
             results = self.model.evaluate(X_test, y_test, verbose=0)
             accuracy_list.append(results[1])
@@ -195,7 +195,7 @@ class LstmModel:
         drop = Dropout(0.50)(flatten)
         softmax = Softmax()(drop)
 
-        input2 = Input(shape=(len(stylometry_names + header_metadata_columns),))
+        input2 = Input(shape=(len(all_stylometry),))
         merged = Concatenate()([softmax, input2])
 
         dense = Dense(256, activation='relu')(merged)
@@ -288,11 +288,11 @@ class LstmModel:
         pad_rev = pad_sequences(tokenized_text, maxlen=max_len, padding='post')
 
         x_train_input1 = pad_rev[x_train.index]
-        x_train_input2 = x_train[stylometry_names + header_metadata_columns]
+        x_train_input2 = x_train[all_stylometry]
         x_test_input1 = pad_rev[x_test.index]
-        x_test_input2 = x_test[stylometry_names + header_metadata_columns]
+        x_test_input2 = x_test[all_stylometry]
         x_val_input1 = pad_rev[x_val.index]
-        x_val_input2 = x_val[stylometry_names + header_metadata_columns]
+        x_val_input2 = x_val[all_stylometry]
 
         vocab_size = len(tok.word_index) + 1
         embed_matrix = self.build_embedding_matrix(tok, word_vec_dict, vocab_size)
