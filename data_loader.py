@@ -294,11 +294,8 @@ if __name__ == "__main__":
     pass
     # gather_user_emails()
     # gather_corpus("enron_mail", "corpus.csv")
-    # filter_most_used_emails(5)
+    filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
-    df = pd.read_csv("corpus.csv", index_col=0)
-    unique_emails = set(df["sender"])
-    print(len(unique_emails))
 
 
 signature = {
