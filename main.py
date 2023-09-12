@@ -357,6 +357,6 @@ if __name__ == "__main__":
     # tfidf_random_forest(df)
     # lstm_model(df)
 
-    model = MlpModel(model_type="tfidf", batch_ratio=0.1)
+    model = MlpModel(model_type="tfidf", batch_ratio=1)
     model.fit_data(df)
     model.train_model()
