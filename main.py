@@ -70,7 +70,7 @@ class MlpModel:
         model.add(Dense(128, activation='relu'))
         model.add(Dense(64, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
         model.summary()
 
@@ -136,7 +136,7 @@ class MlpModel:
             X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
             X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
 
-            self.model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=1000, validation_data=(X_val, y_val))
             gc.collect()
 
         print("saving")
