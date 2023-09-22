@@ -79,6 +79,9 @@ def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.Data
     avg_embedding = df_to_embed["text"].apply(lambda x: np.mean([embed_word_word2vec(word, w2v_model) for word in x.split()], axis=0))
     df_to_embed.loc[:, "avg_embedding"] = avg_embedding
     df_to_embed = df_to_embed.drop(columns=["text"], inplace=False)
+    for i in df_to_embed["avg_embedding"]:
+        if len(i) != 256:
+            print(i)
     split_df = pd.DataFrame(df_to_embed['avg_embedding'].tolist(), index=df_to_embed.index)
     df_to_embed = pd.concat([df_to_embed, split_df], axis=1)
     df_to_embed = df_to_embed.drop(columns=["avg_embedding"], inplace=False)
