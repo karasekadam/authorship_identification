@@ -67,8 +67,8 @@ class MlpModel:
 
         model = Sequential()
         model.add(Dense(256, activation='relu', input_dim=input_dim))
-        model.add(Dense(128, activation='relu'))
-        model.add(Dense(64, activation='relu'))
+        # model.add(Dense(128, activation='relu'))
+        # model.add(Dense(64, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
         model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
@@ -83,7 +83,7 @@ class MlpModel:
                                                                               test_size=0.2)
 
         self.encoder = LabelBinarizer()
-        self.y_train = self.y_train.astype(str)
+        # self.y_train = self.y_train.astype(str)
         self.encoder.fit(self.y_train)
         self.scaler = MinMaxScaler()
 
@@ -136,7 +136,7 @@ class MlpModel:
             X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
             X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
 
-            self.model.fit(X_train, y_train, epochs=1000, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
             gc.collect()
 
         print("saving")
@@ -345,7 +345,14 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
+    df = pd.read_csv("corpus.csv", index_col=0) # .sample(frac=0.1).reset_index(drop=True)
+    model = MlpModel(model_type="word2vec-avg", batch_ratio=0.1)
+    model.fit_data(df)
+    model.train_model()
+
+    # model = ModelOld(model_type="word2vec", batch_ratio=1)
+    # model.fit_data(df)
+    # model.train_model()
     # tfidf_random_forest(df)
     # lstm_model = LstmModel(df, embed_letters=False, limited_len=True, batch_ratio=0.1)
     # lstm_model.run_lstm_model()
@@ -356,7 +363,3 @@ if __name__ == "__main__":
     # df = df.sample(n=len(df) // 3).reset_index(drop=True)
     # tfidf_random_forest(df)
     # lstm_model(df)
-
-    model = MlpModel(model_type="tfidf", batch_ratio=1)
-    model.fit_data(df)
-    model.train_model()
