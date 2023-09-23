@@ -94,11 +94,14 @@ def calculate_stylometry(df: pd.DataFrame) -> pd.DataFrame:
     print(time.time())
     df["num_of_digits"] = df["text"].apply(num_of_digits)
     print(time.time())
+
+    df = df.dropna()
     return df
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv")
-    df = calculate_stylometry(df)
-    df.to_csv("corpus.csv")
+    pass
+    # df = pd.read_csv("corpus.csv")
+    # df = calculate_stylometry(df)
+    # df.to_csv("corpus.csv")
 

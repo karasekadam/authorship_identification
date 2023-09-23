@@ -111,6 +111,7 @@ def slice_text(text: str) -> str:
 def check_existing_text(text: str) -> bool:
     check_text = text.replace(" ", "")
     check_text = check_text.replace("\n", "")
+    check_text = check_text.replace("\t", "")
     if len(check_text) < 1:
         return False
     return True
@@ -294,8 +295,7 @@ if __name__ == "__main__":
     pass
     # gather_user_emails()
     # gather_corpus("enron_mail", "corpus.csv")
-
-    filter_most_used_emails(5)
+    # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 
 

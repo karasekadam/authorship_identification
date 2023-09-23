@@ -345,10 +345,10 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0) # .sample(frac=0.1).reset_index(drop=True)
-    # model = MlpModel(model_type="word2vec-avg", batch_ratio=1)
-    # model.fit_data(df)
-    # model.train_model()
+    df = pd.read_csv("corpus.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
+    model = MlpModel(model_type="word2vec-avg", batch_ratio=1)
+    model.fit_data(df)
+    model.train_model()
 
     # model = ModelOld(model_type="word2vec", batch_ratio=1)
     # model.fit_data(df)
