@@ -66,11 +66,11 @@ class MlpModel:
         output_dim = self.encoder.classes_.shape[0]
 
         model = Sequential()
-        model.add(Dense(256, activation='relu', input_dim=input_dim))
-        # model.add(Dense(128, activation='relu'))
-        # model.add(Dense(64, activation='relu'))
+        model.add(Dense(input_dim, activation='relu', input_dim=input_dim))
+        model.add(Dense(input_dim, activation='relu'))
+        model.add(Dense(input_dim, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
         model.summary()
 
@@ -136,7 +136,7 @@ class MlpModel:
             X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
             X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
 
-            self.model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=500, validation_data=(X_val, y_val))
             gc.collect()
 
         print("saving")
@@ -359,6 +359,13 @@ if __name__ == "__main__":
 
     # df = calculate_stylometry(df)
     # df.to_csv("corpus.csv")
+    """paths = df["path"]
+    dirs = [dir_name.split("/")[-2] for dir_name in paths]
+    names = list(dict.fromkeys(dirs))
+    list_of_tuples = []
+    for name in names:
+        list_of_tuples.append((dirs.count(name), name))
+    print(sorted(list_of_tuples))"""
 
     # df = df.sample(n=len(df) // 3).reset_index(drop=True)
     # tfidf_random_forest(df)

@@ -22,7 +22,7 @@ def load_corpus(path):
     return corpus
 
 
-def process_text(full_email_text: str) -> str:
+def process_text(full_email_text: str) -> str | None:
     by_enter = full_email_text.split('\n')
     if len(by_enter) < 15:
         raise Exception("Header is missing")
@@ -35,6 +35,9 @@ def process_text(full_email_text: str) -> str:
                 email_body_start = line_number + 1
                 break
     email_text = "\n".join(by_enter[email_body_start:])
+
+    if email_text.count("synchronizing") > 10 or email_text.count("Synchronizing"):
+        return
 
     return email_text
 
@@ -73,7 +76,7 @@ def load_from_dir(path: str, email_list: list[list[str]], user_addresses: set[st
 
 def load_emails(path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str]
                   , email_translator: pd.DataFrame) -> None:
-    if "to_do" in path:  # asi nějaký automatický emaily generovaný
+    if "to_do" in path or "contacts" in path or "calendar" in path:  # asi nějaký automatický emaily generovaný
         return
         # možná i calendar by se měl vyfiltrovat?
     dir_list = os.listdir(path)
@@ -104,11 +107,21 @@ def slice_text(text: str) -> str:
     position_to_slice = lowest_position
     while position_to_slice > 0 and text[position_to_slice] == "-":
         position_to_slice -= 1
+    text = text[:position_to_slice]
 
-    return text[:position_to_slice]
+    if text.count("To: ") > 2:
+        res = [i.start() for i in re.finditer("To: ", text)]
+        text = text[:res[2]]
+    if text.count("From: ") > 2:
+        res = [i.start() for i in re.finditer("From: ", text)]
+        text = text[:res[2]]
+
+    return text
 
 
 def check_existing_text(text: str) -> bool:
+    if text is None:
+        return False
     check_text = text.replace(" ", "")
     check_text = check_text.replace("\n", "")
     check_text = check_text.replace("\t", "")
@@ -206,6 +219,8 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
                 return
             sender = translation_email.values[0]
 
+        if file_path == "enron_mail/maildir/beck-s/calendar/120":
+            pass
         email_list.append([sender, email_text, file_path, time] + subject_data + addressee_data)
 
 
@@ -263,7 +278,7 @@ def load_emails_address(path: str, email_list: list[list[str]], address: set[str
 
 
 #
-def load_email_address(file_path: str, email_list: list[list[str]], address: set[str], code="utf-8") -> str:
+def load_email_address(file_path: str, email_list: list[list[str]], address: set[str], code="utf-8") -> str | None:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
         sender_index_start = text.find("From: ")
@@ -293,8 +308,8 @@ def filter_most_used_emails(n: int) -> None:
 
 if __name__ == "__main__":
     pass
-    # gather_user_emails()
-    # gather_corpus("enron_mail", "corpus.csv")
+    gather_user_emails()
+    gather_corpus("enron_mail", "corpus.csv")
     # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 
