@@ -67,8 +67,8 @@ class MlpModel:
 
         model = Sequential()
         model.add(Dense(input_dim, activation='relu', input_dim=input_dim))
-        model.add(Dense(input_dim, activation='relu'))
-        model.add(Dense(input_dim, activation='relu'))
+        # model.add(Dense(input_dim, activation='relu'))
+        # model.add(Dense(input_dim, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
         model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
