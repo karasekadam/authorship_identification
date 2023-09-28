@@ -61,16 +61,21 @@ class MlpModel:
         elif self.model_type == "glove-padd":
             input_dim = 300 + len(all_stylometry)
         else:
-            input_dim = 1
+            raise ValueError("Model type not recognized")
+
+        if self.model_type == "tfidf" or self.model_type == "glove-padd":
+            dense_size = 1024
+        else:
+            dense_size = input_dim
 
         output_dim = self.encoder.classes_.shape[0]
 
         model = Sequential()
-        model.add(Dense(input_dim, activation='relu', input_dim=input_dim))
-        # model.add(Dense(input_dim, activation='relu'))
-        # model.add(Dense(input_dim, activation='relu'))
+        model.add(Dense(dense_size, activation='relu', input_dim=input_dim))
+        model.add(Dense(dense_size, activation='relu'))
+        model.add(Dense(dense_size, activation='relu'))
         model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
         self.model = model
         model.summary()
 
@@ -100,6 +105,7 @@ class MlpModel:
             self.data_transformer = process_text.glove_padd_embedding(self.x_train, 5)
         elif self.model_type == "doc2vec":
             self.data_transformer = process_text.create_doc2vec(self.x_train)
+
 
     def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
         lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
@@ -136,7 +142,7 @@ class MlpModel:
             X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
             X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
 
-            self.model.fit(X_train, y_train, epochs=500, validation_data=(X_val, y_val))
+            self.model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val))
             gc.collect()
 
         print("saving")
@@ -346,7 +352,7 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 if __name__ == "__main__":
     df = pd.read_csv("corpus.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
-    model = MlpModel(model_type="word2vec-avg", batch_ratio=1)
+    model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     model.fit_data(df)
     model.train_model()
 
