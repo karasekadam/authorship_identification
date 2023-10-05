@@ -4,7 +4,8 @@ import pandas as pd
 from keras.src.optimizers import Adam
 from keras.utils import pad_sequences
 from keras import Sequential, Model
-from keras.layers import Dense, Input, Concatenate, Dropout, LSTM, Embedding, Flatten, Bidirectional, MaxPooling1D, Softmax
+from keras.layers import (Dense, Input, Concatenate, Dropout, LSTM, Embedding, Flatten,
+                          Bidirectional, MaxPooling1D, Softmax, GlobalMaxPooling1D)
 from keras.models import load_model
 from keras.initializers import Constant
 from keras.preprocessing.text import Tokenizer
@@ -196,9 +197,10 @@ class LstmModel:
         embed = Embedding(input_dim=vocab_size, output_dim=self.embed_dim, input_length=max_len,
                           embeddings_initializer=Constant(embed_matrix))(input1)
         lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
-        maxpool = MaxPooling1D(pool_size=4, padding='valid')(lstm)
-        flatten = Flatten()(maxpool)
-        drop = Dropout(0.50)(flatten)
+        # maxpool = MaxPooling1D(pool_size=100, padding='valid')(lstm)
+        maxpool = GlobalMaxPooling1D(data_format='channels_last')(lstm)
+        # flatten = Flatten()(maxpool)
+        drop = Dropout(0.50)(maxpool)
         softmax = Softmax()(drop)
 
         input2 = Input(shape=(len(all_stylometry),))
@@ -271,7 +273,7 @@ class LstmModel:
     def run_lstm_model(self, ) -> None:
         self.df = df.drop(columns=['path'], inplace=False)
 
-        x_train, x_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'],
+        x_train, x_test, y_train, y_test = train_test_split(self.df.drop(columns=['sender']), self.df['sender'],
                                                             test_size=0.2)
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
 
@@ -317,7 +319,7 @@ class LstmModel:
             y_val_batch = self.slice_batch(y_val, i)
 
             model.fit([x_train_input1_batch, x_train_input2_batch], y_train_batch, epochs=1000,
-                      validation_data=([x_val_input1_batch, x_val_input2_batch], y_val_batch))
+                      validation_data=([x_val_input1_batch, x_val_input2_batch], y_val_batch), batch_size=32)
 
         results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
         print(results)
@@ -351,17 +353,17 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
-    model = MlpModel(model_type="tfidf", batch_ratio=0.1)
-    model.fit_data(df)
-    model.train_model()
+    df = pd.read_csv("corpus5.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
+    # model = MlpModel(model_type="tfidf", batch_ratio=0.1)
+    # model.fit_data(df)
+    # model.train_model()
 
     # model = ModelOld(model_type="word2vec", batch_ratio=1)
     # model.fit_data(df)
     # model.train_model()
     # tfidf_random_forest(df)
-    # lstm_model = LstmModel(df, embed_letters=False, limited_len=True, batch_ratio=0.1)
-    # lstm_model.run_lstm_model()
+    lstm_model = LstmModel(df, embed_letters=True, limited_len=True, batch_ratio=1)
+    lstm_model.run_lstm_model()
 
     # df = calculate_stylometry(df)
     # df.to_csv("corpus.csv")
