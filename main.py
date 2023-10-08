@@ -198,7 +198,7 @@ class LstmModel:
                           embeddings_initializer=Constant(embed_matrix))(input1)
         lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
         # maxpool = MaxPooling1D(pool_size=100, padding='valid')(lstm)
-        maxpool = GlobalMaxPooling1D(data_format='channels_last')(lstm)
+        maxpool = GlobalMaxPooling1D(data_format='channels_first')(lstm)
         # flatten = Flatten()(maxpool)
         drop = Dropout(0.50)(maxpool)
         softmax = Softmax()(drop)
@@ -350,6 +350,20 @@ def tfidf_random_forest(df: pd.DataFrame):
                                  criterion="gini", min_samples_leaf=1)
     clf.fit(X_train, y_train)
     print(clf.score(X_test, y_test))
+
+
+class EnsembleModel:
+    def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
+                 batch_ratio: float = 1) -> None:
+        self.df = df
+        self.df_train = None
+        self.df_test = None
+        self.df_val = None
+
+    def fit_data(self, df: pd.DataFrame) -> None:
+        df = df.drop(columns=['path'], inplace=False)
+        self.df_train, self.df_test, self.df_val = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+
 
 
 if __name__ == "__main__":
