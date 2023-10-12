@@ -19,6 +19,7 @@ from sklearn.naive_bayes import MultinomialNB
 from math import floor
 import gc
 from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
 # needed for new environment
 # import nltk
@@ -106,7 +107,6 @@ class MlpModel:
             self.data_transformer = process_text.glove_padd_embedding(self.x_train, 5)
         elif self.model_type == "doc2vec":
             self.data_transformer = process_text.create_doc2vec(self.x_train)
-
 
     def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
         lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
@@ -353,21 +353,81 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 class EnsembleModel:
-    def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
-                 batch_ratio: float = 1) -> None:
-        self.df = df
-        self.df_train = None
-        self.df_test = None
-        self.df_val = None
+    def __init__(self) -> None:
+        self.x_train = None
+        self.x_test = None
+        self.x_val = None
+        self.y_train = None
+        self.y_test = None
+        self.y_val = None
+
+        self.random_forest = None
+        self.xgboost = None
+        self.mlp = None
+        self.encoder = None
+        self.data_transformer = None
 
     def fit_data(self, df: pd.DataFrame) -> None:
-        df = df.drop(columns=['path'], inplace=False)
-        self.df_train, self.df_test, self.df_val = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+        df = df[["sender", "text"]]
+        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
+                                                                                df['sender'], test_size=0.2)
+        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
+                                                                              test_size=0.2)
+
+        self.encoder = LabelBinarizer()
+        self.encoder.fit(self.y_train)
+
+        self.y_train = self.encoder.transform(self.y_train)
+        self.y_val = self.encoder.transform(self.y_val)
+        self.y_test = self.encoder.transform(self.y_test)
+
+        self.data_transformer = process_text.create_tf_idf(self.x_train)
+
+        self.x_train = process_text.transform_tf_idf(self.x_train, self.data_transformer)
+        self.x_val = process_text.transform_tf_idf(self.x_val, self.data_transformer)
+        self.x_test = process_text.transform_tf_idf(self.x_test, self.data_transformer)
+
+    def init_mlp(self):
+        input_dim = self.data_transformer.idf_.shape[0] - 1
+        dense_size = 1024
+        output_dim = self.encoder.classes_.shape[0]
+
+        model = Sequential()
+        model.add(Dense(dense_size, activation='relu', input_dim=input_dim))
+        model.add(Dense(dense_size, activation='relu'))
+        model.add(Dense(dense_size, activation='relu'))
+        model.add(Dense(output_dim, activation='softmax'))
+        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+        self.mlp = model
+
+    def init_random_forest(self):
+        self.random_forest = RandomForestClassifier(n_estimators=100, min_samples_split=2, bootstrap=True,
+                                                    criterion="gini", min_samples_leaf=1)
+
+    def init_xgboost(self):
+        self.xgboost = XGBClassifier()
+        self.xgboost.fit(self.x_train, self.y_train)
+
+    def train_models(self):
+        # self.init_mlp()
+        # self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val))
+
+        # self.init_random_forest()
+        # self.random_forest.fit(self.x_train, self.y_train)
+        pass
+
 
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0)  # .sample(frac=0.1).reset_index(drop=True)
+    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.2).reset_index(drop=True)
+    # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
+    # mlp_model.fit_data(df)
+    # mlp_model.train_model()
+
+    ensamble_model = EnsembleModel()
+    ensamble_model.fit_data(df)
+    ensamble_model.train_models()
     # model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # model.fit_data(df)
     # model.train_model()
@@ -376,8 +436,8 @@ if __name__ == "__main__":
     # model.fit_data(df)
     # model.train_model()
     # tfidf_random_forest(df)
-    lstm_model = LstmModel(df, embed_letters=True, limited_len=True, batch_ratio=1)
-    lstm_model.run_lstm_model()
+    # lstm_model = LstmModel(df, embed_letters=True, limited_len=True, batch_ratio=1)
+    # lstm_model.run_lstm_model()
 
     # df = calculate_stylometry(df)
     # df.to_csv("corpus.csv")
