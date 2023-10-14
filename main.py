@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.ensemble import VotingClassifier
 from math import floor
 import gc
 from sklearn.ensemble import RandomForestClassifier
@@ -406,25 +407,42 @@ class EnsembleModel:
 
     def init_xgboost(self):
         self.xgboost = XGBClassifier()
-        self.xgboost.fit(self.x_train, self.y_train)
 
     def train_models(self):
-        # self.init_mlp()
-        # self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val))
+        self.init_mlp()
+        self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val))
 
-        # self.init_random_forest()
-        # self.random_forest.fit(self.x_train, self.y_train)
-        pass
+        self.init_random_forest()
+        self.random_forest.fit(self.x_train, self.y_train)
 
+        self.init_xgboost()
+        self.xgboost.fit(self.x_train, self.y_train)
+        # predicted = self.xgboost.predict(self.x_test)
+        # print(accuracy_score(self.y_test, predicted))
+        predicted, rf_pred, xgb_pred, mlp_pred = self.predict(self.x_test)
+        true_labels = np.argmax(self.y_test, axis=1)
+        print(accuracy_score(true_labels, predicted))
+        print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
+        print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
+        print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
+
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
+        # df = df[["sender", "text"]]
+        # df = process_text.transform_tf_idf(df, self.data_transformer)
+        random_forest_pred = self.random_forest.predict(df)
+        xgboost_pred = self.xgboost.predict(df)
+        mlp_pred = self.mlp.predict(df)
+        pred_sum = np.sum([random_forest_pred, xgboost_pred, mlp_pred], axis=0)
+        pred = np.argmax(pred_sum, axis=1)
+        return pred, random_forest_pred, xgboost_pred, mlp_pred
 
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.2).reset_index(drop=True)
+    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.05).reset_index(drop=True)
     # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # mlp_model.fit_data(df)
     # mlp_model.train_model()
-
     ensamble_model = EnsembleModel()
     ensamble_model.fit_data(df)
     ensamble_model.train_models()
