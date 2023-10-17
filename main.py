@@ -21,6 +21,21 @@ from math import floor
 import gc
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+import tensorflow_hub as hub
+import tensorflow_text as text
+import tensorflow as tf
+from official.nlp import optimization  # to create AdamW optimizer
+# from transformers import *
+from transformers import BertTokenizer, TFBertModel, BertConfig, TFBertForSequenceClassification
+from keras.utils import to_categorical
+from sklearn import preprocessing
+# import tokenization
+from bert import tokenization
+import sys
+from absl import flags
+sys.argv=['preserve_unused_tokens=False']
+flags.FLAGS(sys.argv)
+
 
 # needed for new environment
 # import nltk
@@ -426,7 +441,7 @@ class EnsembleModel:
         print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
         print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
 
-    def predict(self, df: pd.DataFrame) -> np.ndarray:
+    def predict(self, df: pd.DataFrame):
         # df = df[["sender", "text"]]
         # df = process_text.transform_tf_idf(df, self.data_transformer)
         random_forest_pred = self.random_forest.predict(df)
@@ -437,15 +452,197 @@ class EnsembleModel:
         return pred, random_forest_pred, xgboost_pred, mlp_pred
 
 
+class BertAAModel:
+    # zdroj: https://www.kaggle.com/code/nayansakhiya/text-classification-using-bert
+    def __init__(self, max_len: int):
+        self.model = None
+        self.max_len = max_len
+        self.bert_layer = None
+
+        self.x_train = None
+        self.x_test = None
+        self.x_val = None
+        self.y_train = None
+        self.y_test = None
+        self.y_val = None
+
+    def fit_data(self, df: pd.DataFrame) -> None:
+        df = df[["sender", "text"]]
+        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
+                                                                                df['sender'], test_size=0.2)
+        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
+                                                                              test_size=0.2)
+
+        encoder = preprocessing.LabelEncoder()
+        self.y_train = encoder.fit_transform(self.y_train)
+        self.y_val = encoder.transform(self.y_val)
+        self.y_test = encoder.transform(self.y_test)
+
+        m_url = 'https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/2'
+        self.bert_layer = hub.KerasLayer(m_url, trainable=True)
+        vocab_file = self.bert_layer.resolved_object.vocab_file.asset_path.numpy()
+        do_lower_case = self.bert_layer.resolved_object.do_lower_case.numpy()
+        tokenizer = tokenization.FullTokenizer(vocab_file, do_lower_case)
+
+        self.x_train = self.bert_encode(self.x_train["text"], tokenizer, max_len=self.max_len)
+        self.x_val = self.bert_encode(self.x_val["text"], tokenizer, max_len=self.max_len)
+        self.x_test = self.bert_encode(self.x_test["text"], tokenizer, max_len=self.max_len)
+
+    def bert_encode(self, texts, tokenizer, max_len=512):
+        all_tokens = []
+        all_masks = []
+        all_segments = []
+
+        for text in texts:
+            text = tokenizer.tokenize(text)
+
+            text = text[:max_len - 2]
+            input_sequence = ["[CLS]"] + text + ["[SEP]"]
+            pad_len = max_len - len(input_sequence)
+
+            tokens = tokenizer.convert_tokens_to_ids(input_sequence) + [0] * pad_len
+            pad_masks = [1] * len(input_sequence) + [0] * pad_len
+            segment_ids = [0] * max_len
+
+            all_tokens.append(tokens)
+            all_masks.append(pad_masks)
+            all_segments.append(segment_ids)
+
+        return np.array(all_tokens), np.array(all_masks), np.array(all_segments)
+
+    def build_model(self, bert_layer, max_len=512):
+        input_word_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_word_ids")
+        input_mask = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_mask")
+        segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
+
+        pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
+
+        clf_output = sequence_output[:, 0, :]
+
+        lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
+        lay = tf.keras.layers.Dropout(0.2)(lay)
+        lay = tf.keras.layers.Dense(32, activation='relu')(lay)
+        lay = tf.keras.layers.Dropout(0.2)(lay)
+        out = tf.keras.layers.Dense(5, activation='softmax')(lay)
+
+        model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
+        model.compile(tf.keras.optimizers.Adam(lr=2e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+
+        return model
+
+    def train_model(self):
+        self.model = self.build_model(self.bert_layer, max_len=self.max_len)
+        self.model.summary()
+
+        checkpoint = tf.keras.callbacks.ModelCheckpoint('model.h5', monitor='val_accuracy', save_best_only=True,
+                                                        verbose=1)
+        earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=5, verbose=1)
+
+        train_sh = self.model.fit(
+            self.x_train, self.y_train,
+            validation_split=0.2,
+            epochs=3,
+            callbacks=[checkpoint, earlystopping],
+            batch_size=32,
+            verbose=1
+        )
+
+    def predict(self):
+        pass
+
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.05).reset_index(drop=True)
+    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
+    bert_model = BertAAModel(max_len=250)
+    bert_model.fit_data(df)
+    bert_model.train_model()
+
+    """label = preprocessing.LabelEncoder()
+    y = label.fit_transform(df['sender'])
+    y = to_categorical(y)
+
+    x = df['text']
+    m_url = 'https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/2'
+    bert_layer = hub.KerasLayer(m_url, trainable=True)
+
+    vocab_file = bert_layer.resolved_object.vocab_file.asset_path.numpy()
+    do_lower_case = bert_layer.resolved_object.do_lower_case.numpy()
+    tokenizer = tokenization.FullTokenizer(vocab_file, do_lower_case)
+
+    def bert_encode(texts, tokenizer, max_len=512):
+        all_tokens = []
+        all_masks = []
+        all_segments = []
+
+        for text in texts:
+            text = tokenizer.tokenize(text)
+
+            text = text[:max_len - 2]
+            input_sequence = ["[CLS]"] + text + ["[SEP]"]
+            pad_len = max_len - len(input_sequence)
+
+            tokens = tokenizer.convert_tokens_to_ids(input_sequence) + [0] * pad_len
+            pad_masks = [1] * len(input_sequence) + [0] * pad_len
+            segment_ids = [0] * max_len
+
+            all_tokens.append(tokens)
+            all_masks.append(pad_masks)
+            all_segments.append(segment_ids)
+
+        return np.array(all_tokens), np.array(all_masks), np.array(all_segments)
+
+
+    def build_model(bert_layer, max_len=512):
+        input_word_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_word_ids")
+        input_mask = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_mask")
+        segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
+
+        pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
+
+        clf_output = sequence_output[:, 0, :]
+
+        lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
+        lay = tf.keras.layers.Dropout(0.2)(lay)
+        lay = tf.keras.layers.Dense(32, activation='relu')(lay)
+        lay = tf.keras.layers.Dropout(0.2)(lay)
+        out = tf.keras.layers.Dense(5, activation='softmax')(lay)
+
+        model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
+        model.compile(tf.keras.optimizers.Adam(lr=2e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+
+        return model
+
+
+    max_len = 250
+    train_input = bert_encode(x.values, tokenizer, max_len=max_len)
+    test_input = bert_encode(x, tokenizer, max_len=max_len)
+    train_labels = y
+
+    labels = label.classes_
+    print(labels)
+
+    model = build_model(bert_layer, max_len=max_len)
+    model.summary()
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint('model.h5', monitor='val_accuracy', save_best_only=True, verbose=1)
+    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=5, verbose=1)
+
+    train_sh = model.fit(
+        train_input, train_labels,
+        validation_split=0.2,
+        epochs=3,
+        callbacks=[checkpoint, earlystopping],
+        batch_size=32,
+        verbose=1
+    )"""
+
+
     # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # mlp_model.fit_data(df)
     # mlp_model.train_model()
-    ensamble_model = EnsembleModel()
-    ensamble_model.fit_data(df)
-    ensamble_model.train_models()
+    # ensamble_model = EnsembleModel()
+    # ensamble_model.fit_data(df)
+    # ensamble_model.train_models()
     # model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # model.fit_data(df)
     # model.train_model()
