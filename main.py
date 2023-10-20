@@ -33,6 +33,7 @@ from sklearn import preprocessing
 from bert import tokenization
 import sys
 from absl import flags
+from transformers import AutoTokenizer, TFAutoModelForSequenceClassification
 sys.argv=['preserve_unused_tokens=False']
 flags.FLAGS(sys.argv)
 
@@ -552,10 +553,26 @@ class BertAAModel:
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
-    bert_model = BertAAModel(max_len=250)
-    bert_model.fit_data(df)
-    bert_model.train_model()
+    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.01).reset_index(drop=True)
+    # bert_model = BertAAModel(max_len=250)
+    # bert_model.fit_data(df)
+    # bert_model.train_model()
+
+    model_name = "bert-base-uncased"
+    tf_model = TFAutoModelForSequenceClassification.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    sentences = df["text"].tolist()
+
+    tf_batch = tokenizer(
+        sentences,
+        padding=True,
+        truncation=True,
+        return_tensors="tf"
+    )
+
+    tf_outputs = tf_model(tf_batch)
+    pass
 
     """label = preprocessing.LabelEncoder()
     y = label.fit_transform(df['sender'])
