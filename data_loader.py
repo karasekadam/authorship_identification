@@ -2,6 +2,7 @@ import os
 import time
 import re
 import pandas as pd
+import json
 
 
 header_metadata_columns = ["sent_hour", "subject_num_of_words", "subject_num_of_char", "subject_num_of_uppercase_char",
@@ -306,10 +307,50 @@ def filter_most_used_emails(n: int) -> None:
     data.to_csv("corpus" + str(n) + ".csv")
 
 
+def prepare_test_set():
+    data = pd.read_csv("corpus5.csv", index_col=0)
+    senders = data["sender"].unique()
+    test_sample = pd.DataFrame(columns=data.columns)
+    for sender in senders:
+        sender_data = data[data["sender"] == sender]
+        sender_sample = sender_data.sample(n=1000)
+        test_sample = pd.concat([test_sample, sender_sample], ignore_index=True)
+
+    test_sample = test_sample.reset_index(drop=True)
+    return test_sample
+
+
+def process_techcruch():
+    df = pd.read_csv("techcrunch_posts.csv")
+    df = df.rename(columns={"authors": "sender", "content": "text"})
+    df.to_csv("techcrunch.csv")
+    print(df)
+
+
+def process_telegram():
+    df = pd.read_json("group_messages_binance.json")
+    df = df[["message", "from_id"]]
+    df["message"] = df["message"].astype(str)
+    df = df[df["message"].apply(lambda x: len(x) > 50)]
+
+    df = df[df["from_id"].apply(lambda x: "PeerUser" in x.values())]
+    dict_values = df["from_id"].apply(lambda x: list(x.values()))
+    df_dict_values = pd.DataFrame(dict_values.tolist())
+    df = df.merge(df_dict_values, left_index=True, right_index=True)
+    df = df.drop(columns=["from_id", 0])
+    df = df.rename(columns={1: "sender", "message": "text"})
+    return df
+
+
 if __name__ == "__main__":
     pass
-    gather_user_emails()
-    gather_corpus("enron_mail", "corpus.csv")
+    df_telegram = process_telegram()
+    df_telegram.to_csv("telegram.csv")
+    # process_techcruch()
+    # test_sample = prepare_test_set()
+    # test_sample.to_csv("test_sample5.csv")
+    # gather_user_emails()
+    # gather_corpus("enron_mail", "corpus.csv")
     # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 

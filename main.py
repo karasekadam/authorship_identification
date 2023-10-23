@@ -1,4 +1,3 @@
-import os
 import numpy as np
 import pandas as pd
 from keras.src.optimizers import Adam
@@ -9,31 +8,23 @@ from keras.layers import (Dense, Input, Concatenate, Dropout, LSTM, Embedding, F
 from keras.models import load_model
 from keras.initializers import Constant
 from keras.preprocessing.text import Tokenizer
-from stylometry import calculate_stylometry
-from data_loader import gather_corpus
+from transformers.models import bert
+
 import process_text
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.metrics import accuracy_score
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.ensemble import VotingClassifier
 from math import floor
 import gc
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import tensorflow_hub as hub
-import tensorflow_text as text
 import tensorflow as tf
-from official.nlp import optimization  # to create AdamW optimizer
-# from transformers import *
-from transformers import BertTokenizer, TFBertModel, BertConfig, TFBertForSequenceClassification
 from keras.utils import to_categorical
 from sklearn import preprocessing
-# import tokenization
-from bert import tokenization
 import sys
 from absl import flags
-from transformers import AutoTokenizer, TFAutoModelForSequenceClassification
+from bert.tokenization import FullTokenizer
 sys.argv=['preserve_unused_tokens=False']
 flags.FLAGS(sys.argv)
 
@@ -459,35 +450,10 @@ class BertAAModel:
         self.model = None
         self.max_len = max_len
         self.bert_layer = None
+        self.tokenizer = None
 
         self.x_train = None
-        self.x_test = None
-        self.x_val = None
         self.y_train = None
-        self.y_test = None
-        self.y_val = None
-
-    def fit_data(self, df: pd.DataFrame) -> None:
-        df = df[["sender", "text"]]
-        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
-                                                                                df['sender'], test_size=0.2)
-        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
-                                                                              test_size=0.2)
-
-        encoder = preprocessing.LabelEncoder()
-        self.y_train = encoder.fit_transform(self.y_train)
-        self.y_val = encoder.transform(self.y_val)
-        self.y_test = encoder.transform(self.y_test)
-
-        m_url = 'https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/2'
-        self.bert_layer = hub.KerasLayer(m_url, trainable=True)
-        vocab_file = self.bert_layer.resolved_object.vocab_file.asset_path.numpy()
-        do_lower_case = self.bert_layer.resolved_object.do_lower_case.numpy()
-        tokenizer = tokenization.FullTokenizer(vocab_file, do_lower_case)
-
-        self.x_train = self.bert_encode(self.x_train["text"], tokenizer, max_len=self.max_len)
-        self.x_val = self.bert_encode(self.x_val["text"], tokenizer, max_len=self.max_len)
-        self.x_test = self.bert_encode(self.x_test["text"], tokenizer, max_len=self.max_len)
 
     def bert_encode(self, texts, tokenizer, max_len=512):
         all_tokens = []
@@ -531,48 +497,156 @@ class BertAAModel:
 
         return model
 
+    def fit_data(self, df: pd.DataFrame) -> None:
+        train_data = df
+
+        label = preprocessing.LabelEncoder()
+        y = label.fit_transform(train_data['sender'])
+        y = to_categorical(y)
+
+        m_url = 'https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/2'
+        self.bert_layer = hub.KerasLayer(m_url, trainable=False)
+
+        vocab_file = self.bert_layer.resolved_object.vocab_file.asset_path.numpy()
+        do_lower_case = self.bert_layer.resolved_object.do_lower_case.numpy()
+        self.tokenizer = FullTokenizer(vocab_file, do_lower_case)
+
+        self.x_train = self.bert_encode(train_data["text"], tokenizer=self.tokenizer, max_len=self.max_len)
+        self.y_train = y
+
     def train_model(self):
         self.model = self.build_model(self.bert_layer, max_len=self.max_len)
         self.model.summary()
 
         checkpoint = tf.keras.callbacks.ModelCheckpoint('model.h5', monitor='val_accuracy', save_best_only=True,
                                                         verbose=1)
-        earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=5, verbose=1)
+        earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=10, verbose=1)
 
         train_sh = self.model.fit(
             self.x_train, self.y_train,
             validation_split=0.2,
-            epochs=3,
+            epochs=1,
             callbacks=[checkpoint, earlystopping],
             batch_size=32,
             verbose=1
         )
 
-    def predict(self):
-        pass
+    def predict(self, df):
+        x_test = self.bert_encode(df["text"], tokenizer=self.tokenizer, max_len=self.max_len)
+        return self.model.predict(x=x_test, verbose=1)
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.01).reset_index(drop=True)
-    # bert_model = BertAAModel(max_len=250)
-    # bert_model.fit_data(df)
-    # bert_model.train_model()
+    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
+    bert_model = BertAAModel(max_len=50)
+    bert_model.fit_data(df)
+    bert_model.train_model()
+    print(bert_model.predict(df))
 
+    """import numpy as np
+    import tensorflow as tf
+    from transformers import BertTokenizer, TFBertForSequenceClassification
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import classification_report, accuracy_score
+
+    # Load pre-trained BERT model and tokenizer
+    num_classes = 5
     model_name = "bert-base-uncased"
-    tf_model = TFAutoModelForSequenceClassification.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+    model = TFBertForSequenceClassification.from_pretrained(model_name, num_labels=num_classes)  # Specify the number of classes
 
-    sentences = df["text"].tolist()
+    # Load and preprocess your dataset
+    # Assuming you have a list of texts (sentences) and their corresponding labels
+    texts = df['text'].tolist()
+    labels = df["sender"].tolist()
+    encoder = preprocessing.LabelEncoder()
+    labels = encoder.fit_transform(labels).tolist()
+    # Numerical labels for each class
 
-    tf_batch = tokenizer(
-        sentences,
-        padding=True,
-        truncation=True,
-        return_tensors="tf"
+    # Tokenize the text data and convert it to input features
+    input_ids = []
+    attention_masks = []
+
+    for text in texts:
+        encoded_text = tokenizer(text, add_special_tokens=True, padding='max_length', truncation=True, max_length=128,
+                                 return_tensors='tf')
+        input_ids.append(encoded_text['input_ids'])
+        attention_masks.append(encoded_text['attention_mask'])
+
+    input_ids = tf.concat(input_ids, axis=0)
+    attention_masks = tf.concat(attention_masks, axis=0)
+    labels = np.array(labels)
+
+    # Split the data into training and testing sets
+    # input_ids_train, input_ids_test, attention_masks_train, attention_masks_test, labels_train, labels_test = train_test_split(
+    #    input_ids, attention_masks, labels, test_size=0.2, random_state=42)
+
+    input_ids_train = input_ids[:300]
+    input_ids_test = input_ids[300:]
+    attention_masks_train = attention_masks[:300]
+    attention_masks_test = attention_masks[300:]
+    labels_train = labels[:300]
+    labels_test = labels[300:]
+
+    # Define a TensorFlow Dataset
+    train_dataset = tf.data.Dataset.from_tensor_slices(
+        ({"input_ids": input_ids_train, "attention_mask": attention_masks_train}, labels_train))
+    test_dataset = tf.data.Dataset.from_tensor_slices(
+        ({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test))
+
+    # Define the model and optimizer
+    optimizer = tf.keras.optimizers.Adam(learning_rate=2e-5)
+
+    # Fine-tune the model
+    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+    # Fine-tune the model
+    batch_size = 32
+    num_epochs = 3
+
+    model.fit(
+        {"input_ids": input_ids_train, "attention_mask": attention_masks_train},
+        labels_train,
+        batch_size=batch_size,
+        epochs=1,
+        validation_data=({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test)
     )
 
-    tf_outputs = tf_model(tf_batch)
-    pass
+    # Define additional Dense layers
+    dense_layer1 = tf.keras.layers.Dense(256, activation='relu')(
+        model.layers[0].output)  # -4 refers to the BERT pooled_output layer
+    dense_layer2 = tf.keras.layers.Dense(128, activation='relu')(dense_layer1)
+    dense_layer3 = tf.keras.layers.Dense(64, activation='relu')(dense_layer2)
+
+    # Create the final classification layer
+    classification_layer = tf.keras.layers.Dense(num_classes, activation='softmax')(dense_layer3)
+
+    # Define the new model with the added Dense layers
+    final_model = tf.keras.Model(inputs=model.input, outputs=classification_layer)
+
+    # Compile the final model
+    final_model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+    # Fine-tune the final model
+    final_model.fit(
+        {"input_ids": input_ids_train, "attention_mask": attention_masks_train},
+        labels_train,
+        batch_size=batch_size,
+        epochs=num_epochs,
+        validation_data=({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test)
+    )
+
+    # Evaluate the model on the test set
+    test_predictions = model.predict(test_dataset.batch(32))
+    predicted_labels = np.argmax(test_predictions.logits, axis=1)
+
+    # Calculate accuracy and classification report
+    accuracy = accuracy_score(labels_test, predicted_labels)
+    class_report = classification_report(labels_test, predicted_labels,
+                                         target_names=[f'Class {i}' for i in range(num_classes)])
+
+    print(f"Accuracy: {accuracy:.2f}")
+    print(class_report)"""
 
     """label = preprocessing.LabelEncoder()
     y = label.fit_transform(df['sender'])
