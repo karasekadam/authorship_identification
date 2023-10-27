@@ -8,8 +8,6 @@ from keras.layers import (Dense, Input, Concatenate, Dropout, LSTM, Embedding, F
 from keras.models import load_model
 from keras.initializers import Constant
 from keras.preprocessing.text import Tokenizer
-from transformers.models import bert
-
 import process_text
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
@@ -92,8 +90,8 @@ class MlpModel:
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df.drop(columns=['path'], inplace=False)
 
-        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
-                                                            df['sender'], test_size=0.2)
+        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['author']),
+                                                            df['author'], test_size=0.2)
         self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
                                                                               test_size=0.2)
 
@@ -281,7 +279,7 @@ class LstmModel:
     def run_lstm_model(self, ) -> None:
         self.df = df.drop(columns=['path'], inplace=False)
 
-        x_train, x_test, y_train, y_test = train_test_split(self.df.drop(columns=['sender']), self.df['sender'],
+        x_train, x_test, y_train, y_test = train_test_split(self.df.drop(columns=['author']), self.df['author'],
                                                             test_size=0.2)
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
 
@@ -335,7 +333,7 @@ class LstmModel:
 
 def tfidf_random_forest(df: pd.DataFrame):
     df = df.drop(columns=['path'], inplace=False)
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['sender']), df['sender'], test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['author']), df['author'], test_size=0.2)
 
     encoder = LabelBinarizer()
     encoder.fit(y_train)
@@ -363,10 +361,10 @@ def tfidf_random_forest(df: pd.DataFrame):
 class EnsembleModel:
     def __init__(self) -> None:
         self.x_train = None
-        self.x_test = None
+        # self.x_test = None
         self.x_val = None
         self.y_train = None
-        self.y_test = None
+        # self.y_test = None
         self.y_val = None
 
         self.random_forest = None
@@ -376,24 +374,24 @@ class EnsembleModel:
         self.data_transformer = None
 
     def fit_data(self, df: pd.DataFrame) -> None:
-        df = df[["sender", "text"]]
-        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['sender']),
-                                                                                df['sender'], test_size=0.2)
-        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
-                                                                              test_size=0.2)
+        df = df[["author", "text"]]
+        # self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['author']),
+        #                                                                         df['author'], test_size=0.2)
+        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(df["text"], df["author"],
+                                                                              test_size=0.1)
 
         self.encoder = LabelBinarizer()
         self.encoder.fit(self.y_train)
 
         self.y_train = self.encoder.transform(self.y_train)
         self.y_val = self.encoder.transform(self.y_val)
-        self.y_test = self.encoder.transform(self.y_test)
+        # self.y_test = self.encoder.transform(self.y_test)
 
         self.data_transformer = process_text.create_tf_idf(self.x_train)
 
         self.x_train = process_text.transform_tf_idf(self.x_train, self.data_transformer)
         self.x_val = process_text.transform_tf_idf(self.x_val, self.data_transformer)
-        self.x_test = process_text.transform_tf_idf(self.x_test, self.data_transformer)
+        # self.x_test = process_text.transform_tf_idf(self.x_test, self.data_transformer)
 
     def init_mlp(self):
         input_dim = self.data_transformer.idf_.shape[0] - 1
@@ -417,7 +415,7 @@ class EnsembleModel:
 
     def train_models(self):
         self.init_mlp()
-        self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val))
+        self.mlp.fit(self.x_train, self.y_train, epochs=20, validation_data=(self.x_val, self.y_val))
 
         self.init_random_forest()
         self.random_forest.fit(self.x_train, self.y_train)
@@ -426,12 +424,12 @@ class EnsembleModel:
         self.xgboost.fit(self.x_train, self.y_train)
         # predicted = self.xgboost.predict(self.x_test)
         # print(accuracy_score(self.y_test, predicted))
-        predicted, rf_pred, xgb_pred, mlp_pred = self.predict(self.x_test)
-        true_labels = np.argmax(self.y_test, axis=1)
-        print(accuracy_score(true_labels, predicted))
-        print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
-        print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
-        print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
+        # predicted, rf_pred, xgb_pred, mlp_pred = self.predict(self.x_test)
+        # true_labels = np.argmax(self.y_test, axis=1)
+        # print(accuracy_score(true_labels, predicted))
+        # print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
+        # print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
+        # print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
 
     def predict(self, df: pd.DataFrame):
         # df = df[["sender", "text"]]
@@ -443,6 +441,17 @@ class EnsembleModel:
         pred = np.argmax(pred_sum, axis=1)
         return pred, random_forest_pred, xgboost_pred, mlp_pred
 
+    def evaluate(self, df: pd.DataFrame):
+        y_test = self.encoder.transform(df['author'])
+        y_test = np.argmax(y_test, axis=1)
+        x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
+
+        predicted, _, _, _ = self.predict(x_test)
+        acc = accuracy_score(y_test, predicted)
+        return acc
+
+
+
 
 class BertAAModel:
     # zdroj: https://www.kaggle.com/code/nayansakhiya/text-classification-using-bert
@@ -451,6 +460,7 @@ class BertAAModel:
         self.max_len = max_len
         self.bert_layer = None
         self.tokenizer = None
+        self.encoder = None
 
         self.x_train = None
         self.y_train = None
@@ -500,8 +510,8 @@ class BertAAModel:
     def fit_data(self, df: pd.DataFrame) -> None:
         train_data = df
 
-        label = preprocessing.LabelEncoder()
-        y = label.fit_transform(train_data['sender'])
+        self.encoder = preprocessing.LabelEncoder()
+        y = self.encoder.fit_transform(train_data['author'])
         y = to_categorical(y)
 
         m_url = 'https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/2'
@@ -531,202 +541,31 @@ class BertAAModel:
             verbose=1
         )
 
-    def predict(self, df):
+    def evaluate(self, df):
         x_test = self.bert_encode(df["text"], tokenizer=self.tokenizer, max_len=self.max_len)
-        return self.model.predict(x=x_test, verbose=1)
+        y_test = self.encoder.transform(df['author'])
+        y_test = to_categorical(y_test)
+        score, acc = self.model.evaluate(x_test, y_test, verbose=2)
+        return acc
+
+
+def experiment():
+    df_enron = pd.read_csv("enron_experiment_sample_5.csv", index_col=0)
+    df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
+
+    # bert_model = BertAAModel(max_len=50)
+    # bert_model.fit_data(df_enron_train)
+    # bert_model.train_model()
+    # print(bert_model.evaluate(df_enron_test))
+
+    ensamble_model = EnsembleModel()
+    ensamble_model.fit_data(df_enron_train)
+    ensamble_model.train_models()
+    print(ensamble_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("corpus5.csv", index_col=0).sample(frac=0.1).reset_index(drop=True)
-    bert_model = BertAAModel(max_len=50)
-    bert_model.fit_data(df)
-    bert_model.train_model()
-    print(bert_model.predict(df))
-
-    """import numpy as np
-    import tensorflow as tf
-    from transformers import BertTokenizer, TFBertForSequenceClassification
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import classification_report, accuracy_score
-
-    # Load pre-trained BERT model and tokenizer
-    num_classes = 5
-    model_name = "bert-base-uncased"
-    tokenizer = BertTokenizer.from_pretrained(model_name)
-    model = TFBertForSequenceClassification.from_pretrained(model_name, num_labels=num_classes)  # Specify the number of classes
-
-    # Load and preprocess your dataset
-    # Assuming you have a list of texts (sentences) and their corresponding labels
-    texts = df['text'].tolist()
-    labels = df["sender"].tolist()
-    encoder = preprocessing.LabelEncoder()
-    labels = encoder.fit_transform(labels).tolist()
-    # Numerical labels for each class
-
-    # Tokenize the text data and convert it to input features
-    input_ids = []
-    attention_masks = []
-
-    for text in texts:
-        encoded_text = tokenizer(text, add_special_tokens=True, padding='max_length', truncation=True, max_length=128,
-                                 return_tensors='tf')
-        input_ids.append(encoded_text['input_ids'])
-        attention_masks.append(encoded_text['attention_mask'])
-
-    input_ids = tf.concat(input_ids, axis=0)
-    attention_masks = tf.concat(attention_masks, axis=0)
-    labels = np.array(labels)
-
-    # Split the data into training and testing sets
-    # input_ids_train, input_ids_test, attention_masks_train, attention_masks_test, labels_train, labels_test = train_test_split(
-    #    input_ids, attention_masks, labels, test_size=0.2, random_state=42)
-
-    input_ids_train = input_ids[:300]
-    input_ids_test = input_ids[300:]
-    attention_masks_train = attention_masks[:300]
-    attention_masks_test = attention_masks[300:]
-    labels_train = labels[:300]
-    labels_test = labels[300:]
-
-    # Define a TensorFlow Dataset
-    train_dataset = tf.data.Dataset.from_tensor_slices(
-        ({"input_ids": input_ids_train, "attention_mask": attention_masks_train}, labels_train))
-    test_dataset = tf.data.Dataset.from_tensor_slices(
-        ({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test))
-
-    # Define the model and optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=2e-5)
-
-    # Fine-tune the model
-    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-    # Fine-tune the model
-    batch_size = 32
-    num_epochs = 3
-
-    model.fit(
-        {"input_ids": input_ids_train, "attention_mask": attention_masks_train},
-        labels_train,
-        batch_size=batch_size,
-        epochs=1,
-        validation_data=({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test)
-    )
-
-    # Define additional Dense layers
-    dense_layer1 = tf.keras.layers.Dense(256, activation='relu')(
-        model.layers[0].output)  # -4 refers to the BERT pooled_output layer
-    dense_layer2 = tf.keras.layers.Dense(128, activation='relu')(dense_layer1)
-    dense_layer3 = tf.keras.layers.Dense(64, activation='relu')(dense_layer2)
-
-    # Create the final classification layer
-    classification_layer = tf.keras.layers.Dense(num_classes, activation='softmax')(dense_layer3)
-
-    # Define the new model with the added Dense layers
-    final_model = tf.keras.Model(inputs=model.input, outputs=classification_layer)
-
-    # Compile the final model
-    final_model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-    # Fine-tune the final model
-    final_model.fit(
-        {"input_ids": input_ids_train, "attention_mask": attention_masks_train},
-        labels_train,
-        batch_size=batch_size,
-        epochs=num_epochs,
-        validation_data=({"input_ids": input_ids_test, "attention_mask": attention_masks_test}, labels_test)
-    )
-
-    # Evaluate the model on the test set
-    test_predictions = model.predict(test_dataset.batch(32))
-    predicted_labels = np.argmax(test_predictions.logits, axis=1)
-
-    # Calculate accuracy and classification report
-    accuracy = accuracy_score(labels_test, predicted_labels)
-    class_report = classification_report(labels_test, predicted_labels,
-                                         target_names=[f'Class {i}' for i in range(num_classes)])
-
-    print(f"Accuracy: {accuracy:.2f}")
-    print(class_report)"""
-
-    """label = preprocessing.LabelEncoder()
-    y = label.fit_transform(df['sender'])
-    y = to_categorical(y)
-
-    x = df['text']
-    m_url = 'https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/2'
-    bert_layer = hub.KerasLayer(m_url, trainable=True)
-
-    vocab_file = bert_layer.resolved_object.vocab_file.asset_path.numpy()
-    do_lower_case = bert_layer.resolved_object.do_lower_case.numpy()
-    tokenizer = tokenization.FullTokenizer(vocab_file, do_lower_case)
-
-    def bert_encode(texts, tokenizer, max_len=512):
-        all_tokens = []
-        all_masks = []
-        all_segments = []
-
-        for text in texts:
-            text = tokenizer.tokenize(text)
-
-            text = text[:max_len - 2]
-            input_sequence = ["[CLS]"] + text + ["[SEP]"]
-            pad_len = max_len - len(input_sequence)
-
-            tokens = tokenizer.convert_tokens_to_ids(input_sequence) + [0] * pad_len
-            pad_masks = [1] * len(input_sequence) + [0] * pad_len
-            segment_ids = [0] * max_len
-
-            all_tokens.append(tokens)
-            all_masks.append(pad_masks)
-            all_segments.append(segment_ids)
-
-        return np.array(all_tokens), np.array(all_masks), np.array(all_segments)
-
-
-    def build_model(bert_layer, max_len=512):
-        input_word_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_word_ids")
-        input_mask = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_mask")
-        segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
-
-        pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
-
-        clf_output = sequence_output[:, 0, :]
-
-        lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
-        lay = tf.keras.layers.Dropout(0.2)(lay)
-        lay = tf.keras.layers.Dense(32, activation='relu')(lay)
-        lay = tf.keras.layers.Dropout(0.2)(lay)
-        out = tf.keras.layers.Dense(5, activation='softmax')(lay)
-
-        model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
-        model.compile(tf.keras.optimizers.Adam(lr=2e-5), loss='categorical_crossentropy', metrics=['accuracy'])
-
-        return model
-
-
-    max_len = 250
-    train_input = bert_encode(x.values, tokenizer, max_len=max_len)
-    test_input = bert_encode(x, tokenizer, max_len=max_len)
-    train_labels = y
-
-    labels = label.classes_
-    print(labels)
-
-    model = build_model(bert_layer, max_len=max_len)
-    model.summary()
-
-    checkpoint = tf.keras.callbacks.ModelCheckpoint('model.h5', monitor='val_accuracy', save_best_only=True, verbose=1)
-    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=5, verbose=1)
-
-    train_sh = model.fit(
-        train_input, train_labels,
-        validation_split=0.2,
-        epochs=3,
-        callbacks=[checkpoint, earlystopping],
-        batch_size=32,
-        verbose=1
-    )"""
-
+    experiment()
 
     # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # mlp_model.fit_data(df)

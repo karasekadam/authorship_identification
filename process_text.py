@@ -89,15 +89,15 @@ def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.Data
 
 
 def create_tf_idf(corpus_df: pd.DataFrame) -> TfidfVectorizer:
-    data = corpus_df["text"].tolist()
+    # data = corpus_df["text"].tolist()
     tfidf_vectorizer = TfidfVectorizer(lowercase=True, stop_words="english")
-    tfidf_vectorizer.fit(data)
+    tfidf_vectorizer.fit(corpus_df)
     return tfidf_vectorizer
 
 
 def transform_tf_idf(transform_df: pd.DataFrame, tfidf_vectorizer: TfidfVectorizer) -> pd.DataFrame:
-    data = transform_df["text"].tolist()
-    tfidf_matrix = tfidf_vectorizer.transform(data)
+    # data = transform_df["text"].tolist()
+    tfidf_matrix = tfidf_vectorizer.transform(transform_df)
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out(), index=transform_df.index)
     df = pd.concat([transform_df, tfidf_df], axis=1)
     df.drop(columns=["text"], inplace=True)

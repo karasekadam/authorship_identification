@@ -55,8 +55,8 @@ def gather_corpus(path: str, final_file_name: str) -> pd.DataFrame:
     load_from_dir(path, email_list, users_emails, emails_to_translate, email_translator_df)
 
     # saves emails to csv
-    email_df = pd.DataFrame(email_list, columns=['sender', 'text', 'path'] + header_metadata_columns)
-    email_df[["sender", "text"]].duplicated(keep="first")
+    email_df = pd.DataFrame(email_list, columns=['author', 'text', 'path'] + header_metadata_columns)
+    email_df[["author", "text"]].duplicated(keep="first")
     email_df.to_csv(final_file_name)
     print(email_df[["path", "text"]])
     et = time.time()
@@ -240,10 +240,10 @@ def gather_user_emails():
             for email in address:
                 if email and dir_name.split("-")[0] in email:
                     checked_addresses.append(email)
-        email_df = pd.DataFrame(emails, columns=['sender'])
+        email_df = pd.DataFrame(emails, columns=['author'])
         if len(checked_addresses) > 0:
             if len(checked_addresses) > 1:
-                emails_ordered = email_df.groupby("sender").size().sort_values(ascending=False)
+                emails_ordered = email_df.groupby("author").size().sort_values(ascending=False)
                 main_address = emails_ordered.index[0]
                 address_final.append(main_address)
                 for address in checked_addresses:
@@ -296,39 +296,26 @@ def load_email_address(file_path: str, email_list: list[list[str]], address: set
 
 
 # filters only n most active senders
-def filter_most_used_emails(n: int) -> None:
-    data = pd.read_csv("corpus.csv", index_col=0)
-    data_grouped = data.groupby("sender").size().sort_values(ascending=False)
-    data_grouped.to_csv("corpus_grouped.csv")
+def filter_most_active_authors(n: int, df: pd.DataFrame) -> pd.DataFrame:
+    # data = pd.read_csv("corpus.csv", index_col=0)
+    data_grouped = df.groupby("author").size().sort_values(ascending=False)
 
     first_n_emails = list(data_grouped.head(n).index)
-    data = data[data['sender'].isin(first_n_emails)]
+    data = df[df['author'].isin(first_n_emails)]
     data = data.reset_index(drop=True)
-    data.to_csv("corpus" + str(n) + ".csv")
-
-
-def prepare_test_set():
-    data = pd.read_csv("corpus5.csv", index_col=0)
-    senders = data["sender"].unique()
-    test_sample = pd.DataFrame(columns=data.columns)
-    for sender in senders:
-        sender_data = data[data["sender"] == sender]
-        sender_sample = sender_data.sample(n=1000)
-        test_sample = pd.concat([test_sample, sender_sample], ignore_index=True)
-
-    test_sample = test_sample.reset_index(drop=True)
-    return test_sample
+    return data
+    # data.to_csv("corpus" + str(n) + ".csv")
 
 
 def process_techcruch():
     df = pd.read_csv("techcrunch_posts.csv")
-    df = df.rename(columns={"authors": "sender", "content": "text"})
+    df = df.rename(columns={"authors": "author", "content": "text"})
     df.to_csv("techcrunch.csv")
-    print(df)
 
 
 def process_telegram():
-    df = pd.read_json("group_messages_binance.json")
+    # zdroj https://www.kaggle.com/datasets/aagghh/crypto-telegram-groups?select=group_messages_okex.json
+    df = pd.read_json("group_messages_okex.json")
     df = df[["message", "from_id"]]
     df["message"] = df["message"].astype(str)
     df = df[df["message"].apply(lambda x: len(x) > 50)]
@@ -338,14 +325,39 @@ def process_telegram():
     df_dict_values = pd.DataFrame(dict_values.tolist())
     df = df.merge(df_dict_values, left_index=True, right_index=True)
     df = df.drop(columns=["from_id", 0])
-    df = df.rename(columns={1: "sender", "message": "text"})
+    df = df.rename(columns={1: "author", "message": "text"})
     return df
+
+
+def prepare_experiment_set(number_of_authors: int, samples_per_author: int, data: pd.DataFrame, output_name: str) -> None:
+    data["text"] = data["text"].astype(str)
+    data = data[data["text"].apply(lambda x: len(x) > 100)]
+    data = filter_most_active_authors(number_of_authors, data)
+    authors = data["author"].unique()
+    test_sample = pd.DataFrame(columns=data.columns)
+    for author in authors:
+        author_data = data[data["author"] == author]
+        author_sample = author_data.sample(n=samples_per_author)
+        test_sample = pd.concat([test_sample, author_sample], ignore_index=True)
+
+    test_sample = test_sample.reset_index(drop=True)
+    test_sample.to_csv(output_name)
+
+
+def prepare_all_experiments_sets():
+    df_enron = pd.read_csv("corpus.csv", index_col=0)
+    prepare_experiment_set(5, 1000, df_enron, "enron_experiment_sample_5.csv")
+
+    df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
+    prepare_experiment_set(5, 1000, df_techcrunch, "techcrunch_experiment_sample_5.csv")
+
+    df_telegram = pd.read_csv("telegram.csv", index_col=0)
+    prepare_experiment_set(5, 1000, df_telegram, "telegram_experiment_sample_5.csv")
 
 
 if __name__ == "__main__":
     pass
-    df_telegram = process_telegram()
-    df_telegram.to_csv("telegram.csv")
+    prepare_all_experiments_sets()
     # process_techcruch()
     # test_sample = prepare_test_set()
     # test_sample.to_csv("test_sample5.csv")
