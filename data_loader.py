@@ -345,14 +345,35 @@ def prepare_experiment_set(number_of_authors: int, samples_per_author: int, data
 
 
 def prepare_all_experiments_sets():
-    df_enron = pd.read_csv("corpus.csv", index_col=0)
-    prepare_experiment_set(5, 1000, df_enron, "enron_experiment_sample_5.csv")
+    # 5 authors experiment sets
+    df_enron = pd.read_csv("enron.csv", index_col=0)
+    prepare_experiment_set(5, 4800, df_enron, "experiment_sets/enron_experiment_sample_5.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
-    prepare_experiment_set(5, 1000, df_techcrunch, "techcrunch_experiment_sample_5.csv")
+    prepare_experiment_set(5, 2500, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_5.csv")
 
     df_telegram = pd.read_csv("telegram.csv", index_col=0)
-    prepare_experiment_set(5, 1000, df_telegram, "telegram_experiment_sample_5.csv")
+    prepare_experiment_set(5, 1000, df_telegram, "experiment_sets/telegram_experiment_sample_5.csv")
+
+    # 10 authors experiment sets
+    df_enron = pd.read_csv("enron.csv", index_col=0)
+    prepare_experiment_set(5, 2100, df_enron, "experiment_sets/enron_experiment_sample_10.csv")
+
+    df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
+    prepare_experiment_set(5, 1200, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_10.csv")
+
+    df_telegram = pd.read_csv("telegram.csv", index_col=0)
+    prepare_experiment_set(5, 650, df_telegram, "experiment_sets/telegram_experiment_sample_10.csv")
+
+    # 25 authors experiment sets
+    df_enron = pd.read_csv("enron.csv", index_col=0)
+    prepare_experiment_set(5, 800, df_enron, "experiment_sets/enron_experiment_sample_25.csv")
+
+    df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
+    prepare_experiment_set(5, 250, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_25.csv")
+
+    df_telegram = pd.read_csv("telegram.csv", index_col=0)
+    prepare_experiment_set(5, 470, df_telegram, "experiment_sets/telegram_experiment_sample_25.csv")
 
 
 if __name__ == "__main__":

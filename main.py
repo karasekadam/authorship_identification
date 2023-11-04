@@ -190,12 +190,13 @@ class MlpModel:
 
 class LstmModel:
     def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
-                 batch_ratio: float = 1) -> None:
+                 batch_ratio: float = 1, max_len: int = 256) -> None:
         self.df = df
         self.embed_letters = embed_letters
         self.limited_len = limited_len
         self.embed_dim = embed_dim  # size of vector to which words/letters are embedded
         self.batch_ratio = batch_ratio
+        self.max_len = max_len
 
     # builds neural network architecture for lstm model
     def build_network(self, max_len: int, vocab_size: int, embed_matrix, encoder) -> Model:
@@ -209,13 +210,13 @@ class LstmModel:
         drop = Dropout(0.50)(maxpool)
         softmax = Softmax()(drop)
 
-        input2 = Input(shape=(len(all_stylometry),))
-        merged = Concatenate()([softmax, input2])
+        # input2 = Input(shape=(len(all_stylometry),))
+        # merged = Concatenate()([softmax, input2])
 
-        dense = Dense(256, activation='relu')(merged)
+        dense = Dense(256, activation='relu')(softmax)
         dropout = Dropout(0.50)(dense)
         output = Dense(encoder.classes_.shape[0], activation='softmax')(dropout)
-        model = Model(inputs=[input1, input2], outputs=output)
+        model = Model(inputs=[input1], outputs=output)
 
         model.summary()
 
@@ -225,7 +226,7 @@ class LstmModel:
 
     def calculate_max_len(self, x_train: pd.DataFrame) -> int:
         if self.limited_len:
-            max_len = 100
+            max_len = self.max_len
         else:
             x_train["len"] = x_train["text"].apply(lambda x: len(x.split()))
             text_data = x_train.sort_values(by=["len"], ascending=False)
@@ -252,12 +253,12 @@ class LstmModel:
             text_list = [text.replace(" ", "") for text in text_list]
             corpus_text = [[*text] for text in text_list]
 
-            df_text = df["text"].tolist()
+            df_text = self.df["text"].tolist()
             df_text = [text.replace(" ", "") for text in df_text]
             df_text = [[*text] for text in df_text]
         else:
             corpus_text = x_train['text']
-            df_text = df['text']
+            df_text = self.df['text']
 
         return corpus_text, df_text
 
@@ -276,16 +277,15 @@ class LstmModel:
         return word_vec_dict
 
     # lstm model with word2vec embedding, option to use words or letters and length of input text
-    def run_lstm_model(self, ) -> None:
-        self.df = df.drop(columns=['path'], inplace=False)
+    def run_lstm_model(self) -> None:
+        self.df = self.df.drop(columns=['path'], inplace=False)
 
-        x_train, x_test, y_train, y_test = train_test_split(self.df.drop(columns=['author']), self.df['author'],
-                                                            test_size=0.2)
-        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
+        x_train, x_val, y_train, y_val = train_test_split(self.df["text"], self.df['author'], test_size=0.2)
+        # x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
 
         encoder = LabelBinarizer()
         y_train = encoder.fit_transform(y_train)
-        y_test = encoder.transform(y_test)
+        # y_test = encoder.transform(y_test)
         y_val = encoder.transform(y_val)
 
         # translation dictionary from word/letter to vector
@@ -302,11 +302,11 @@ class LstmModel:
         pad_rev = pad_sequences(tokenized_text, maxlen=max_len, padding='post')
 
         x_train_input1 = pad_rev[x_train.index]
-        x_train_input2 = x_train[all_stylometry]
-        x_test_input1 = pad_rev[x_test.index]
-        x_test_input2 = x_test[all_stylometry]
+        # x_train_input2 = x_train[all_stylometry]
+        # x_test_input1 = pad_rev[x_test.index]
+        # x_test_input2 = x_test[all_stylometry]
         x_val_input1 = pad_rev[x_val.index]
-        x_val_input2 = x_val[all_stylometry]
+        # x_val_input2 = x_val[all_stylometry]
 
         vocab_size = len(tok.word_index) + 1
         embed_matrix = self.build_embedding_matrix(tok, word_vec_dict, vocab_size)
@@ -317,18 +317,21 @@ class LstmModel:
             print("Batch: ", i)
 
             x_train_input1_batch = self.slice_batch(x_train_input1, i)
-            x_train_input2_batch = self.slice_batch(x_train_input2, i)
+            # x_train_input2_batch = self.slice_batch(x_train_input2, i)
             y_train_batch = self.slice_batch(y_train, i)
 
             x_val_input1_batch = self.slice_batch(x_val_input1, i)
-            x_val_input2_batch = self.slice_batch(x_val_input2, i)
+            # x_val_input2_batch = self.slice_batch(x_val_input2, i)
             y_val_batch = self.slice_batch(y_val, i)
 
-            model.fit([x_train_input1_batch, x_train_input2_batch], y_train_batch, epochs=1000,
-                      validation_data=([x_val_input1_batch, x_val_input2_batch], y_val_batch), batch_size=32)
+            model.fit([x_train_input1_batch], y_train_batch, epochs=1000,
+                      validation_data=([x_val_input1_batch], y_val_batch), batch_size=32)
 
-        results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
-        print(results)
+        # results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
+        # print(results)
+
+    def evaluate(self, df: pd.DataFrame):
+        pass
 
 
 def tfidf_random_forest(df: pd.DataFrame):
@@ -451,8 +454,6 @@ class EnsembleModel:
         return acc
 
 
-
-
 class BertAAModel:
     # zdroj: https://www.kaggle.com/code/nayansakhiya/text-classification-using-bert
     def __init__(self, max_len: int):
@@ -493,14 +494,15 @@ class BertAAModel:
         segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
 
         pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
+        bert_layer.trainable = False
 
         clf_output = sequence_output[:, 0, :]
 
-        lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
-        lay = tf.keras.layers.Dropout(0.2)(lay)
-        lay = tf.keras.layers.Dense(32, activation='relu')(lay)
-        lay = tf.keras.layers.Dropout(0.2)(lay)
-        out = tf.keras.layers.Dense(5, activation='softmax')(lay)
+        # lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
+        # lay = tf.keras.layers.Dropout(0.2)(lay)
+        # lay = tf.keras.layers.Dense(32, activation='relu')(lay)
+        # lay = tf.keras.layers.Dropout(0.2)(lay)
+        out = tf.keras.layers.Dense(5, activation='softmax')(clf_output)
 
         model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
         model.compile(tf.keras.optimizers.Adam(lr=2e-5), loss='categorical_crossentropy', metrics=['accuracy'])
@@ -550,18 +552,22 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("enron_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
 
-    # bert_model = BertAAModel(max_len=50)
-    # bert_model.fit_data(df_enron_train)
-    # bert_model.train_model()
-    # print(bert_model.evaluate(df_enron_test))
+    bert_model = BertAAModel(max_len=512)
+    bert_model.fit_data(df_enron_train)
+    bert_model.train_model()
+    print(bert_model.evaluate(df_enron_test))
 
-    ensamble_model = EnsembleModel()
-    ensamble_model.fit_data(df_enron_train)
-    ensamble_model.train_models()
-    print(ensamble_model.evaluate(df_enron_test))
+    # ensamble_model = EnsembleModel()
+    # ensamble_model.fit_data(df_enron_train)
+    # ensamble_model.train_models()
+    # print(ensamble_model.evaluate(df_enron_test))
+
+    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
+    # lstm_model.run_lstm_model()
+    # print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
