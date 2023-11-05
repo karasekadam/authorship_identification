@@ -494,7 +494,7 @@ class BertAAModel:
         segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
 
         pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
-        bert_layer.trainable = False
+        bert_layer.trainable = True
 
         clf_output = sequence_output[:, 0, :]
 
@@ -505,7 +505,7 @@ class BertAAModel:
         out = tf.keras.layers.Dense(5, activation='softmax')(clf_output)
 
         model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
-        model.compile(tf.keras.optimizers.Adam(lr=2e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(tf.keras.optimizers.Adam(lr=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
 
         return model
 
@@ -517,7 +517,7 @@ class BertAAModel:
         y = to_categorical(y)
 
         m_url = 'https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/2'
-        self.bert_layer = hub.KerasLayer(m_url, trainable=False)
+        self.bert_layer = hub.KerasLayer(m_url, trainable=True)
 
         vocab_file = self.bert_layer.resolved_object.vocab_file.asset_path.numpy()
         do_lower_case = self.bert_layer.resolved_object.do_lower_case.numpy()
@@ -539,7 +539,7 @@ class BertAAModel:
             validation_split=0.2,
             epochs=1,
             callbacks=[checkpoint, earlystopping],
-            batch_size=32,
+            batch_size=16,
             verbose=1
         )
 

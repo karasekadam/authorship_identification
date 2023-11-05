@@ -10,7 +10,7 @@ header_metadata_columns = ["sent_hour", "subject_num_of_words", "subject_num_of_
                            "num_of_addressees_from_same_domain", "num_of_cc", "num_of_cc_from_same_domain"]
 
 
-def load_corpus(path):
+"""def load_corpus(path):
     corpus = {}
     dir_list = os.listdir(path)
     files = [f for f in dir_list if os.path.isfile(path + '/' + f)]
@@ -20,7 +20,7 @@ def load_corpus(path):
         with open(path + '/' + file, 'r', encoding='utf-8') as f:
             text = f.read()
         corpus[name] = text
-    return corpus
+    return corpus"""
 
 
 def process_text(full_email_text: str) -> str | None:
@@ -102,19 +102,23 @@ def slice_text(text: str) -> str:
             if lowest_position is None or index < lowest_position:
                 lowest_position = index
 
-    if lowest_position is None:
-        return text
+    # if lowest_position is None:
+    #     return text
 
     position_to_slice = lowest_position
-    while position_to_slice > 0 and text[position_to_slice] == "-":
-        position_to_slice -= 1
-    text = text[:position_to_slice]
+    if position_to_slice is not None:
+        while position_to_slice > 0 and text[position_to_slice] == "-":
+            position_to_slice -= 1
+        text = text[:position_to_slice]
 
     if text.count("To: ") > 2:
         res = [i.start() for i in re.finditer("To: ", text)]
         text = text[:res[2]]
     if text.count("From: ") > 2:
         res = [i.start() for i in re.finditer("From: ", text)]
+        text = text[:res[2]]
+    if text.count("Sent by: ") > 2:
+        res = [i.start() for i in re.finditer("Sent by: ", text)]
         text = text[:res[2]]
 
     return text
@@ -307,7 +311,7 @@ def filter_most_active_authors(n: int, df: pd.DataFrame) -> pd.DataFrame:
     # data.to_csv("corpus" + str(n) + ".csv")
 
 
-def process_techcruch():
+def process_techcrunch():
     df = pd.read_csv("techcrunch_posts.csv")
     df = df.rename(columns={"authors": "author", "content": "text"})
     df.to_csv("techcrunch.csv")
@@ -347,7 +351,7 @@ def prepare_experiment_set(number_of_authors: int, samples_per_author: int, data
 def prepare_all_experiments_sets():
     # 5 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
-    prepare_experiment_set(5, 4800, df_enron, "experiment_sets/enron_experiment_sample_5.csv")
+    prepare_experiment_set(5, 4000, df_enron, "experiment_sets/enron_experiment_sample_5.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
     prepare_experiment_set(5, 2500, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_5.csv")
@@ -357,7 +361,7 @@ def prepare_all_experiments_sets():
 
     # 10 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
-    prepare_experiment_set(5, 2100, df_enron, "experiment_sets/enron_experiment_sample_10.csv")
+    prepare_experiment_set(5, 1800, df_enron, "experiment_sets/enron_experiment_sample_10.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
     prepare_experiment_set(5, 1200, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_10.csv")
@@ -367,7 +371,7 @@ def prepare_all_experiments_sets():
 
     # 25 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
-    prepare_experiment_set(5, 800, df_enron, "experiment_sets/enron_experiment_sample_25.csv")
+    prepare_experiment_set(5, 700, df_enron, "experiment_sets/enron_experiment_sample_25.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
     prepare_experiment_set(5, 250, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_25.csv")
@@ -378,12 +382,12 @@ def prepare_all_experiments_sets():
 
 if __name__ == "__main__":
     pass
+    # gather_corpus("enron_mail", "enron.csv")
     prepare_all_experiments_sets()
     # process_techcruch()
     # test_sample = prepare_test_set()
     # test_sample.to_csv("test_sample5.csv")
     # gather_user_emails()
-    # gather_corpus("enron_mail", "corpus.csv")
     # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
 
