@@ -1,8 +1,12 @@
 import pandas as pd
 
 if __name__ == "__main__":
-    text_data = pd.read_csv("enron.csv", index_col=0)
+    text_data = pd.read_csv("techcrunch.csv", index_col=0)
     text_data["text"] = text_data["text"].astype(str)
+    text_data["len"] = text_data["text"].str.len()
+    average_text_length = text_data["len"].mean()
+    print(f"Average text length {average_text_length}.")
+
     text_data = text_data[text_data["text"].apply(lambda x: len(x) > 100)]
     texts_per_author = text_data["author"].value_counts()
     texts_per_author = texts_per_author[texts_per_author > 10]

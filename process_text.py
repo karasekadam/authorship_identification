@@ -50,8 +50,8 @@ def create_word2vec(train_df: pd.DataFrame) -> Word2Vec:
     return w2v_model
 
 
-def create_word2vec_letters(train_df: pd.DataFrame) -> Word2Vec:
-    text_list = train_df["text"].tolist()
+def create_word2vec_letters(texts: pd.Series) -> Word2Vec:
+    text_list = texts.tolist()
     text_list = [text.replace(" ", "") for text in text_list]
     just_text = [[*text] for text in text_list]
     w2v_model = Word2Vec(min_count=5,

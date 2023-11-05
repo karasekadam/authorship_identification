@@ -224,13 +224,19 @@ class LstmModel:
 
         return model
 
-    def calculate_max_len(self, x_train: pd.DataFrame) -> int:
+    def calculate_max_len(self, x_texts: pd.Series) -> int:
         if self.limited_len:
             max_len = self.max_len
         else:
-            x_train["len"] = x_train["text"].apply(lambda x: len(x.split()))
-            text_data = x_train.sort_values(by=["len"], ascending=False)
-            max_len = text_data["len"].iloc[0]
+            if self.embed_letters:
+                x_texts_list = x_texts.tolist()
+                x_texts_len = list(map(lambda x: len(x), x_texts_list))
+                max_len = max(x_texts_len)
+            else:
+                x_texts_list = x_texts.tolist()
+                x_texts_len = list(map(lambda x: len(x.split()), x_texts_list))
+                max_len = max(x_texts_len)
+
         return max_len
 
     def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
@@ -247,9 +253,9 @@ class LstmModel:
 
         return embed_matrix
 
-    def get_corpus_and_df_text(self, x_train: pd.DataFrame) -> tuple:
+    def get_corpus_and_df_text(self, x_texts: pd.DataFrame) -> tuple:
         if self.embed_letters:
-            text_list = x_train["text"].tolist()
+            text_list = x_texts.tolist()
             text_list = [text.replace(" ", "") for text in text_list]
             corpus_text = [[*text] for text in text_list]
 
@@ -257,7 +263,7 @@ class LstmModel:
             df_text = [text.replace(" ", "") for text in df_text]
             df_text = [[*text] for text in df_text]
         else:
-            corpus_text = x_train['text']
+            corpus_text = x_texts
             df_text = self.df['text']
 
         return corpus_text, df_text
@@ -278,7 +284,7 @@ class LstmModel:
 
     # lstm model with word2vec embedding, option to use words or letters and length of input text
     def run_lstm_model(self) -> None:
-        self.df = self.df.drop(columns=['path'], inplace=False)
+        # self.df = self.df.drop(columns=['path'], inplace=False)
 
         x_train, x_val, y_train, y_val = train_test_split(self.df["text"], self.df['author'], test_size=0.2)
         # x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
@@ -301,7 +307,8 @@ class LstmModel:
         max_len = self.calculate_max_len(x_train)
         pad_rev = pad_sequences(tokenized_text, maxlen=max_len, padding='post')
 
-        x_train_input1 = pad_rev[x_train.index]
+        x_train_ind = x_train.index
+        x_train_input1 = pad_rev[x_train_ind]
         # x_train_input2 = x_train[all_stylometry]
         # x_test_input1 = pad_rev[x_test.index]
         # x_test_input2 = x_test[all_stylometry]
@@ -552,22 +559,24 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
+    df_enron_train = df_enron_train.reset_index(drop=True)
+    df_enron_test = df_enron_test.reset_index(drop=True)
 
-    bert_model = BertAAModel(max_len=512)
-    bert_model.fit_data(df_enron_train)
-    bert_model.train_model()
-    print(bert_model.evaluate(df_enron_test))
+    # bert_model = BertAAModel(max_len=512)
+    # bert_model.fit_data(df_enron_train)
+    # bert_model.train_model()
+    # print(bert_model.evaluate(df_enron_test))
 
     # ensamble_model = EnsembleModel()
     # ensamble_model.fit_data(df_enron_train)
     # ensamble_model.train_models()
     # print(ensamble_model.evaluate(df_enron_test))
 
-    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
-    # lstm_model.run_lstm_model()
-    # print(lstm_model.evaluate(df_enron_test))
+    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
+    lstm_model.run_lstm_model()
+    print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
