@@ -26,7 +26,8 @@ header_metadata_columns = ["sent_hour", "subject_num_of_words", "subject_num_of_
 def process_text(full_email_text: str) -> str | None:
     by_enter = full_email_text.split('\n')
     if len(by_enter) < 15:
-        raise Exception("Header is missing")
+        return
+        # raise Exception("Header is missing")
     email_body_start = 15
     if "X-FileName:" in by_enter[14]:
         pass
@@ -108,6 +109,10 @@ def slice_text(text: str, file_path: str) -> str:
             position_to_slice -= 1
         text = text[:position_to_slice]
 
+    if text.count("\n\n\n\n\n\n") > 0:
+        res = [i.start() for i in re.finditer("\n\n\n\n\n\n", text)]
+        text = text[:res[0]]
+
     if text.count("To: ") > 2:
         res = [i.start() for i in re.finditer("To: ", text)]
         text = text[:res[2]]
@@ -120,7 +125,17 @@ def slice_text(text: str, file_path: str) -> str:
 
     for author in signature:
         if author in file_path:
-            text = text.replace(signature[author], "")
+            for signature_type in signature[author]:
+                if len(signature_type) <= 2:
+                    email_start = text[:-(10 + len(signature_type))]
+                    email_end = text[-(10 + len(signature_type)):]
+                    email_end = email_end.replace(signature_type, "")
+                    text = email_start + email_end
+                else:
+                    email_start = text[:-(50 + len(signature_type))]
+                    email_end = text[-(50 + len(signature_type)):]
+                    email_end = email_end.replace(signature_type, "")
+                    text = email_start + email_end
 
     return text
 
@@ -195,7 +210,6 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
                email_translator: pd.DataFrame, code="utf-8") -> None:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
-        text = slice_text(text, file_path)
 
         # gets sender
         sender_index_start = text.find("From: ")
@@ -204,6 +218,14 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
         sender = text[sender_index_start + 6: text.find("\n", sender_index_start)]
         if "@" not in sender:
             return
+
+        if sender not in user_addresses:
+            translation_email = email_translator[email_translator["email"] == sender]["main_email"]
+            if len(translation_email) == 0:
+                return
+            sender = translation_email.values[0]
+
+        text = slice_text(text, file_path)
 
         # process time
         time = process_time(text)
@@ -218,12 +240,6 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
         email_text = process_text(text)
         if not check_existing_text(email_text):
             return
-
-        if sender not in user_addresses:
-            translation_email = email_translator[email_translator["email"] == sender]["main_email"]
-            if len(translation_email) == 0:
-                return
-            sender = translation_email.values[0]
 
         if file_path == "enron_mail/maildir/beck-s/calendar/120":
             pass
@@ -382,12 +398,30 @@ def prepare_all_experiments_sets():
 
 
 signature = {
-    "semperger-c": "C",
-    "kaminski-v": "Vince",
-    "dasovich-j": "Jeff",
-    "germany-c": "Chris Germany",
-    "mann-k": "Kay",
-    "jones-t": "Tana",
+    "kaminski-v": ["Vince", "Kaminski"],
+    "dasovich-j": ["Jeff", "jeff"],
+    "germany-c": ["Chris", "Germany"],
+    "mann-k": ["Kay", "kay"],
+    "jones-t": ["Tana"],
+    "beck-s": ["--Sally"],
+    "delainey-d": ["Delainey", "Dave"],
+    "lavorato-j": ["John", "Lavo"],
+    "mcconnell-m": ["Mike", "m", "mike"],
+    "nckaughkub-e": ["Errol", "McLaughlin"],
+    "gigor-d": ["DG", "dg", "Dg"],
+    "arnorld-j": ["John", "john"],
+    "fossum-d": ["DF", "df", "Df"],
+    "allen-p": ["Phillip", "Allen"],
+    "cash-m": ["Michelle", "Cash"],
+    "grigsby-m": ["Mike", "Grigsby", "Grigs"],
+    "haedicke-m": ["Mark", "Haedicke"],
+    "lenhart-m": ["Matt", "matt"],
+    "love-p": ["PL", "pl"],
+    "farmer-d": ["D", "Daren", "Farmer"],
+    "bass-e": ["-Eric", "-e", "Eric", "-E", "e"],
+    "campbell-l": ["LC", "Larry", "Campbell"],
+    "dorland-c": ["Chris", "CD", "Cd", "cd"],
+    "kean-s": ["Jeff"]
 }
 
 

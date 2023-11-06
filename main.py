@@ -10,7 +10,7 @@ from keras.initializers import Constant
 from keras.preprocessing.text import Tokenizer
 import process_text
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
+from sklearn.preprocessing import MinMaxScaler, LabelBinarizer, OneHotEncoder
 from sklearn.metrics import accuracy_score
 from math import floor
 import gc
@@ -370,13 +370,14 @@ def tfidf_random_forest(df: pd.DataFrame):
 
 
 class EnsembleModel:
-    def __init__(self) -> None:
+    def __init__(self, size_of_layer: int) -> None:
         self.x_train = None
-        # self.x_test = None
         self.x_val = None
         self.y_train = None
-        # self.y_test = None
+        self.y_train_one_hot = None
         self.y_val = None
+        self.y_val_one_hot = None
+        self.size_of_layer = size_of_layer
 
         self.random_forest = None
         self.xgboost = None
@@ -386,30 +387,25 @@ class EnsembleModel:
 
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df[["author", "text"]]
-        # self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['author']),
-        #                                                                         df['author'], test_size=0.2)
         self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(df["text"], df["author"],
                                                                               test_size=0.1)
 
+        # transforms labels to one-hot encoding
         self.encoder = LabelBinarizer()
         self.encoder.fit(self.y_train)
+        self.y_train_one_hot = self.encoder.transform(self.y_train)
+        self.y_train = np.argmax(self.y_train_one_hot, axis=1)
+        self.y_val_one_hot = self.encoder.transform(self.y_val)
+        self.y_val = np.argmax(self.y_val_one_hot, axis=1)
 
-        self.y_train = self.encoder.transform(self.y_train)
-        self.y_val = self.encoder.transform(self.y_val)
-        # self.y_test = self.encoder.transform(self.y_test)
-
-        # self.data_transformer = process_text.create_tf_idf(self.x_train)
+        # transforms text to count vector
         self.data_transformer = process_text.create_count_vector(self.x_train)
-
-        # self.x_train = process_text.transform_tf_idf(self.x_train, self.data_transformer)
         self.x_train = process_text.transform_count_vector(self.x_train, self.data_transformer)
-        # self.x_val = process_text.transform_tf_idf(self.x_val, self.data_transformer)
         self.x_val = process_text.transform_count_vector(self.x_val, self.data_transformer)
-        # self.x_test = process_text.transform_tf_idf(self.x_test, self.data_transformer)
 
     def init_mlp(self):
-        input_dim = len(self.data_transformer.vocabulary_) - 1
-        dense_size = 1024
+        input_dim = len(self.x_train.columns)
+        dense_size = self.size_of_layer
         output_dim = self.encoder.classes_.shape[0]
 
         model = Sequential()
@@ -433,7 +429,7 @@ class EnsembleModel:
     def train_models(self):
         self.init_mlp()
         callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
-        self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val),
+        self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
                      callbacks=[callback])
 
         self.init_random_forest()
@@ -443,31 +439,45 @@ class EnsembleModel:
         self.xgboost.fit(self.x_train, self.y_train)
 
     def predict(self, df: pd.DataFrame):
-        # df = df[["sender", "text"]]
-        # df = process_text.transform_tf_idf(df, self.data_transformer)
+        # each model predicts the author
         random_forest_pred = self.random_forest.predict(df)
+        random_forest_pred_onehot = OneHotEncoder(sparse=False).fit_transform(np.array(random_forest_pred.reshape(-1, 1)))
         xgboost_pred = self.xgboost.predict(df)
-        mlp_pred = self.mlp.predict(df)
-        pred_sum = np.sum([random_forest_pred, xgboost_pred, mlp_pred], axis=0)
+        xgboost_pred_onehot = OneHotEncoder(sparse=False).fit_transform(np.array(xgboost_pred.reshape(-1, 1)))
+        mlp_pred_softmax = self.mlp.predict(df)
+        mlp_pred_onehot = softmax_to_binary(mlp_pred_softmax)
+        mlp_pred = np.argmax(mlp_pred_onehot, axis=1)
+
+        # soft voting of all ensemble models
+        pred_sum = np.sum([random_forest_pred_onehot, xgboost_pred_onehot, mlp_pred_onehot], axis=0)
         pred = np.argmax(pred_sum, axis=1)
+
         return pred, random_forest_pred, xgboost_pred, mlp_pred
 
     def evaluate(self, df: pd.DataFrame):
-        y_test = self.encoder.transform(df['author'])
-        y_test = np.argmax(y_test, axis=1)
+        y_test_one_hot = self.encoder.transform(df['author'])
+        y_test = np.argmax(y_test_one_hot, axis=1)
         x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
 
         predicted, _, _, _ = self.predict(x_test)
 
         predicted, rf_pred, xgb_pred, mlp_pred = self.predict(x_test)
-        true_labels = y_test
-        print(accuracy_score(true_labels, predicted))
-        print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
-        print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
-        print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
+        print("Ensemble accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
+        print("Random forest accuracy: ", accuracy_score(y_true=y_test, y_pred=rf_pred))
+        print("XGB classifier accuracy: ", accuracy_score(y_true=y_test, y_pred=xgb_pred))
+        print("MLP accuracy: ", accuracy_score(y_true=y_test, y_pred=mlp_pred))
 
         acc = accuracy_score(y_test, predicted)
         return acc
+
+
+def softmax_to_binary(softmax_pred: np.ndarray) -> np.ndarray:
+    binary_pred = np.zeros(shape=softmax_pred.shape)
+    for i in range(softmax_pred.shape[0]):
+        max_index = np.argmax(softmax_pred[i])
+        binary_pred[i][max_index] = 1
+
+    return binary_pred
 
 
 class BertAAModel:
@@ -568,7 +578,7 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_25.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)
@@ -578,7 +588,7 @@ def experiment():
     # bert_model.train_model()
     # print(bert_model.evaluate(df_enron_test))
 
-    ensamble_model = EnsembleModel()
+    ensamble_model = EnsembleModel(size_of_layer=1024)
     ensamble_model.fit_data(df_enron_train)
     ensamble_model.train_models()
     print(ensamble_model.evaluate(df_enron_test))
