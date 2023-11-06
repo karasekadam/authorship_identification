@@ -93,7 +93,7 @@ key_words_for_slicing = ["--- Forwarded by", "--- Original Message", "--- Origin
                          "---Original Message", "---Original Appointment"]
 
 
-def slice_text(text: str) -> str:
+def slice_text(text: str, file_path: str) -> str:
     lowest_position = None
     for key_word in key_words_for_slicing:
         search_end = len(text) if lowest_position is None else lowest_position
@@ -101,9 +101,6 @@ def slice_text(text: str) -> str:
         if index != -1:
             if lowest_position is None or index < lowest_position:
                 lowest_position = index
-
-    # if lowest_position is None:
-    #     return text
 
     position_to_slice = lowest_position
     if position_to_slice is not None:
@@ -120,6 +117,10 @@ def slice_text(text: str) -> str:
     if text.count("Sent by: ") > 2:
         res = [i.start() for i in re.finditer("Sent by: ", text)]
         text = text[:res[2]]
+
+    for author in signature:
+        if author in file_path:
+            text = text.replace(signature[author], "")
 
     return text
 
@@ -194,7 +195,7 @@ def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[
                email_translator: pd.DataFrame, code="utf-8") -> None:
     with open(file_path, 'r', encoding=code) as file_desc:
         text = file_desc.read()
-        text = slice_text(text)
+        text = slice_text(text, file_path)
 
         # gets sender
         sender_index_start = text.find("From: ")
@@ -361,28 +362,38 @@ def prepare_all_experiments_sets():
 
     # 10 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
-    prepare_experiment_set(5, 1800, df_enron, "experiment_sets/enron_experiment_sample_10.csv")
+    prepare_experiment_set(10, 1800, df_enron, "experiment_sets/enron_experiment_sample_10.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
-    prepare_experiment_set(5, 1200, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_10.csv")
+    prepare_experiment_set(10, 1200, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_10.csv")
 
     df_telegram = pd.read_csv("telegram.csv", index_col=0)
-    prepare_experiment_set(5, 650, df_telegram, "experiment_sets/telegram_experiment_sample_10.csv")
+    prepare_experiment_set(10, 650, df_telegram, "experiment_sets/telegram_experiment_sample_10.csv")
 
     # 25 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
-    prepare_experiment_set(5, 700, df_enron, "experiment_sets/enron_experiment_sample_25.csv")
+    prepare_experiment_set(25, 700, df_enron, "experiment_sets/enron_experiment_sample_25.csv")
 
     df_techcrunch = pd.read_csv("techcrunch.csv", index_col=0)
-    prepare_experiment_set(5, 250, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_25.csv")
+    prepare_experiment_set(25, 250, df_techcrunch, "experiment_sets/techcrunch_experiment_sample_25.csv")
 
     df_telegram = pd.read_csv("telegram.csv", index_col=0)
-    prepare_experiment_set(5, 470, df_telegram, "experiment_sets/telegram_experiment_sample_25.csv")
+    prepare_experiment_set(25, 470, df_telegram, "experiment_sets/telegram_experiment_sample_25.csv")
+
+
+signature = {
+    "semperger-c": "C",
+    "kaminski-v": "Vince",
+    "dasovich-j": "Jeff",
+    "germany-c": "Chris Germany",
+    "mann-k": "Kay",
+    "jones-t": "Tana",
+}
 
 
 if __name__ == "__main__":
     pass
-    # gather_corpus("enron_mail", "enron.csv")
+    gather_corpus("enron_mail", "enron.csv")
     prepare_all_experiments_sets()
     # process_techcruch()
     # test_sample = prepare_test_set()
@@ -390,8 +401,3 @@ if __name__ == "__main__":
     # gather_user_emails()
     # filter_most_used_emails(5)
     # check proč gather addresses nevzalo rodrigue
-
-
-signature = {
-    "semperger-c": "C"
-}
