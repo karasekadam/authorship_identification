@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import tensorflow_hub as hub
 import tensorflow as tf
+from keras import regularizers
 from keras.utils import to_categorical
 from sklearn import preprocessing
 import sys
@@ -268,7 +269,7 @@ class LstmModel:
 
         return corpus_text, df_text
 
-    def build_word_vec_dict(self, x_train: pd.DataFrame) -> dict:
+    def build_word_vec_dict(self, x_train: pd.Series) -> dict:
         if self.embed_letters:
             w2v_model = process_text.create_word2vec_letters(x_train)
         else:
@@ -397,23 +398,26 @@ class EnsembleModel:
         self.y_val = self.encoder.transform(self.y_val)
         # self.y_test = self.encoder.transform(self.y_test)
 
-        self.data_transformer = process_text.create_tf_idf(self.x_train)
+        # self.data_transformer = process_text.create_tf_idf(self.x_train)
+        self.data_transformer = process_text.create_count_vector(self.x_train)
 
-        self.x_train = process_text.transform_tf_idf(self.x_train, self.data_transformer)
-        self.x_val = process_text.transform_tf_idf(self.x_val, self.data_transformer)
+        # self.x_train = process_text.transform_tf_idf(self.x_train, self.data_transformer)
+        self.x_train = process_text.transform_count_vector(self.x_train, self.data_transformer)
+        # self.x_val = process_text.transform_tf_idf(self.x_val, self.data_transformer)
+        self.x_val = process_text.transform_count_vector(self.x_val, self.data_transformer)
         # self.x_test = process_text.transform_tf_idf(self.x_test, self.data_transformer)
 
     def init_mlp(self):
-        input_dim = self.data_transformer.idf_.shape[0] - 1
+        input_dim = len(self.data_transformer.vocabulary_) - 1
         dense_size = 1024
         output_dim = self.encoder.classes_.shape[0]
 
         model = Sequential()
-        model.add(Dense(dense_size, activation='relu', input_dim=input_dim))
-        model.add(Dense(dense_size, activation='relu'))
-        model.add(Dense(dense_size, activation='relu'))
+        model.add(Dense(dense_size, activation='relu', input_dim=input_dim, kernel_regularizer=regularizers.L2(l2=1e-3)))
+        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-3)))
+        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-3)))
         model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
         self.mlp = model
 
     def init_random_forest(self):
@@ -432,14 +436,6 @@ class EnsembleModel:
 
         self.init_xgboost()
         self.xgboost.fit(self.x_train, self.y_train)
-        # predicted = self.xgboost.predict(self.x_test)
-        # print(accuracy_score(self.y_test, predicted))
-        # predicted, rf_pred, xgb_pred, mlp_pred = self.predict(self.x_test)
-        # true_labels = np.argmax(self.y_test, axis=1)
-        # print(accuracy_score(true_labels, predicted))
-        # print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
-        # print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
-        # print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
 
     def predict(self, df: pd.DataFrame):
         # df = df[["sender", "text"]]
@@ -457,6 +453,14 @@ class EnsembleModel:
         x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
 
         predicted, _, _, _ = self.predict(x_test)
+
+        predicted, rf_pred, xgb_pred, mlp_pred = self.predict(x_test)
+        true_labels = np.argmax(y_test, axis=1)
+        print(accuracy_score(true_labels, predicted))
+        print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
+        print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
+        print(accuracy_score(np.argmax(mlp_pred, axis=1), predicted))
+
         acc = accuracy_score(y_test, predicted)
         return acc
 
@@ -559,7 +563,7 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)
@@ -569,14 +573,14 @@ def experiment():
     # bert_model.train_model()
     # print(bert_model.evaluate(df_enron_test))
 
-    # ensamble_model = EnsembleModel()
-    # ensamble_model.fit_data(df_enron_train)
-    # ensamble_model.train_models()
-    # print(ensamble_model.evaluate(df_enron_test))
+    ensamble_model = EnsembleModel()
+    ensamble_model.fit_data(df_enron_train)
+    ensamble_model.train_models()
+    print(ensamble_model.evaluate(df_enron_test))
 
-    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
-    lstm_model.run_lstm_model()
-    print(lstm_model.evaluate(df_enron_test))
+    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
+    # lstm_model.run_lstm_model()
+    # print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import numpy as np
 from gensim.models.doc2vec import TaggedDocument, Doc2Vec
 from gensim.models import Word2Vec
 from nltk import word_tokenize
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 
 
 def glove_load() -> dict[str, np.ndarray]:
@@ -88,14 +88,29 @@ def embed_df_word2vec(df_to_embed: pd.DataFrame, w2v_model: Word2Vec) -> pd.Data
     return df_to_embed
 
 
-def create_tf_idf(corpus_df: pd.DataFrame) -> TfidfVectorizer:
+def create_tf_idf(corpus_df: pd.Series) -> TfidfVectorizer:
     # data = corpus_df["text"].tolist()
     tfidf_vectorizer = TfidfVectorizer(lowercase=True, stop_words="english")
     tfidf_vectorizer.fit(corpus_df)
     return tfidf_vectorizer
 
 
-def transform_tf_idf(transform_df: pd.DataFrame, tfidf_vectorizer: TfidfVectorizer) -> pd.DataFrame:
+def create_count_vector(corpus_df: pd.Series) -> CountVectorizer:
+    count_vectorizer = CountVectorizer(lowercase=True, stop_words="english")
+    count_vectorizer.fit(corpus_df)
+    return count_vectorizer
+
+
+def transform_count_vector(transform_df: pd.Series, count_vectorizer: CountVectorizer) -> pd.DataFrame:
+    # data = transform_df["text"].tolist()
+    tfidf_matrix = count_vectorizer.transform(transform_df)
+    tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=count_vectorizer.get_feature_names_out(), index=transform_df.index)
+    df = pd.concat([transform_df, tfidf_df], axis=1)
+    df.drop(columns=["text"], inplace=True)
+    return df
+
+
+def transform_tf_idf(transform_df: pd.Series, tfidf_vectorizer: TfidfVectorizer) -> pd.DataFrame:
     # data = transform_df["text"].tolist()
     tfidf_matrix = tfidf_vectorizer.transform(transform_df)
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out(), index=transform_df.index)
