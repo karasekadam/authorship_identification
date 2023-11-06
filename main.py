@@ -413,9 +413,12 @@ class EnsembleModel:
         output_dim = self.encoder.classes_.shape[0]
 
         model = Sequential()
-        model.add(Dense(dense_size, activation='relu', input_dim=input_dim, kernel_regularizer=regularizers.L2(l2=1e-3)))
-        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-3)))
-        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-3)))
+        model.add(Dense(dense_size, activation='relu', input_dim=input_dim, kernel_regularizer=regularizers.L2(l2=1e-2)))
+        model.add(Dropout(0.5))
+        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-2)))
+        model.add(Dropout(0.5))
+        model.add(Dense(dense_size, activation='relu', kernel_regularizer=regularizers.L2(l2=1e-2)))
+        model.add(Dropout(0.5))
         model.add(Dense(output_dim, activation='softmax'))
         model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
         self.mlp = model
@@ -429,7 +432,9 @@ class EnsembleModel:
 
     def train_models(self):
         self.init_mlp()
-        self.mlp.fit(self.x_train, self.y_train, epochs=20, validation_data=(self.x_val, self.y_val))
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+        self.mlp.fit(self.x_train, self.y_train, epochs=100, validation_data=(self.x_val, self.y_val),
+                     callbacks=[callback])
 
         self.init_random_forest()
         self.random_forest.fit(self.x_train, self.y_train)
@@ -455,7 +460,7 @@ class EnsembleModel:
         predicted, _, _, _ = self.predict(x_test)
 
         predicted, rf_pred, xgb_pred, mlp_pred = self.predict(x_test)
-        true_labels = np.argmax(y_test, axis=1)
+        true_labels = y_test
         print(accuracy_score(true_labels, predicted))
         print(accuracy_score(np.argmax(rf_pred, axis=1), predicted))
         print(accuracy_score(np.argmax(xgb_pred, axis=1), predicted))
