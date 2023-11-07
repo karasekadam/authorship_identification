@@ -24,6 +24,7 @@ from sklearn import preprocessing
 import sys
 from absl import flags
 from bert.tokenization import FullTokenizer
+import time
 sys.argv=['preserve_unused_tokens=False']
 flags.FLAGS(sys.argv)
 
@@ -588,8 +589,11 @@ def experiment():
     # bert_model.train_model()
     # print(bert_model.evaluate(df_enron_test))
 
+    start_time = time.time()
     ensamble_model = EnsembleModel(size_of_layer=1024)
     ensamble_model.fit_data(df_enron_train)
+    end_time = time.time()
+    print("Time to fit data: ", end_time - start_time)
     ensamble_model.train_models()
     print(ensamble_model.evaluate(df_enron_test))
 
