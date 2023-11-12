@@ -44,7 +44,7 @@ all_stylometry = header_metadata_columns + stylometry_names
 
 
 # multilayer perceptron model with different options for text embedding
-class MlpModel:
+"""class MlpModel:
     def __init__(self, model_type: str, batch_ratio: float) -> None:
         self.model_type = model_type
         self.model = None
@@ -187,7 +187,7 @@ class MlpModel:
 
     def evaluate_load_model(self, path: str) -> None:
         self.model = load_model(path)
-        self.test_model()
+        self.test_model()"""
 
 
 class LstmModel:
@@ -319,6 +319,7 @@ class LstmModel:
 
         vocab_size = len(tok.word_index) + 1
         embed_matrix = self.build_embedding_matrix(tok, word_vec_dict, vocab_size)
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 
         model = self.build_network(max_len=max_len, vocab_size=vocab_size, embed_matrix=embed_matrix, encoder=encoder)
 
@@ -334,7 +335,7 @@ class LstmModel:
             y_val_batch = self.slice_batch(y_val, i)
 
             model.fit([x_train_input1_batch], y_train_batch, epochs=1000,
-                      validation_data=([x_val_input1_batch], y_val_batch), batch_size=32)
+                      validation_data=([x_val_input1_batch], y_val_batch), batch_size=32, callbacks=[callback])
 
         # results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
         # print(results)
@@ -343,7 +344,7 @@ class LstmModel:
         pass
 
 
-def tfidf_random_forest(df: pd.DataFrame):
+"""def tfidf_random_forest(df: pd.DataFrame):
     df = df.drop(columns=['path'], inplace=False)
     X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['author']), df['author'], test_size=0.2)
 
@@ -367,7 +368,7 @@ def tfidf_random_forest(df: pd.DataFrame):
     clf = RandomForestClassifier(n_estimators=100, min_samples_split=2, bootstrap=True,
                                  criterion="gini", min_samples_leaf=1)
     clf.fit(X_train, y_train)
-    print(clf.score(X_test, y_test))
+    print(clf.score(X_test, y_test))"""
 
 
 class EnsembleModel:
@@ -389,7 +390,7 @@ class EnsembleModel:
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df[["author", "text"]]
         self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(df["text"], df["author"],
-                                                                              test_size=0.1)
+                                                                              test_size=0.2)
 
         # transforms labels to one-hot encoding
         self.encoder = LabelBinarizer()
@@ -406,6 +407,7 @@ class EnsembleModel:
 
     def init_mlp(self):
         input_dim = len(self.x_train.columns)
+        print("Input length: ", input_dim)
         dense_size = self.size_of_layer
         output_dim = self.encoder.classes_.shape[0]
 
@@ -418,6 +420,7 @@ class EnsembleModel:
         model.add(Dropout(0.5))
         model.add(Dense(output_dim, activation='softmax'))
         model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.summary()
         self.mlp = model
 
     def init_random_forest(self):
@@ -579,7 +582,7 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_25.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)
@@ -589,17 +592,17 @@ def experiment():
     # bert_model.train_model()
     # print(bert_model.evaluate(df_enron_test))
 
-    start_time = time.time()
-    ensamble_model = EnsembleModel(size_of_layer=1024)
-    ensamble_model.fit_data(df_enron_train)
-    end_time = time.time()
-    print("Time to fit data: ", end_time - start_time)
-    ensamble_model.train_models()
-    print(ensamble_model.evaluate(df_enron_test))
+    # start_time = time.time()
+    # ensamble_model = EnsembleModel(size_of_layer=1024)
+    # ensamble_model.fit_data(df_enron_train)
+    # ensamble_model.train_models()
+    # end_time = time.time()
+    # print("Time to fit data: ", end_time - start_time)
+    # print(ensamble_model.evaluate(df_enron_test))
 
-    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=False, batch_ratio=1)
-    # lstm_model.run_lstm_model()
-    # print(lstm_model.evaluate(df_enron_test))
+    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=10000)
+    lstm_model.run_lstm_model()
+    print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
