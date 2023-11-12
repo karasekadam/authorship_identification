@@ -199,6 +199,9 @@ class LstmModel:
         self.embed_dim = embed_dim  # size of vector to which words/letters are embedded
         self.batch_ratio = batch_ratio
         self.max_len = max_len
+        self.encoder = None
+        self.tok = None
+        self.model = None
 
     # builds neural network architecture for lstm model
     def build_network(self, max_len: int, vocab_size: int, embed_matrix, encoder) -> Model:
@@ -206,14 +209,9 @@ class LstmModel:
         embed = Embedding(input_dim=vocab_size, output_dim=self.embed_dim, input_length=max_len,
                           embeddings_initializer=Constant(embed_matrix))(input1)
         lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
-        # maxpool = MaxPooling1D(pool_size=100, padding='valid')(lstm)
         maxpool = GlobalMaxPooling1D(data_format='channels_first')(lstm)
-        # flatten = Flatten()(maxpool)
         drop = Dropout(0.50)(maxpool)
         softmax = Softmax()(drop)
-
-        # input2 = Input(shape=(len(all_stylometry),))
-        # merged = Concatenate()([softmax, input2])
 
         dense = Dense(256, activation='relu')(softmax)
         dropout = Dropout(0.50)(dense)
@@ -286,15 +284,11 @@ class LstmModel:
 
     # lstm model with word2vec embedding, option to use words or letters and length of input text
     def run_lstm_model(self) -> None:
-        # self.df = self.df.drop(columns=['path'], inplace=False)
-
         x_train, x_val, y_train, y_val = train_test_split(self.df["text"], self.df['author'], test_size=0.2)
-        # x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.4)
 
-        encoder = LabelBinarizer()
-        y_train = encoder.fit_transform(y_train)
-        # y_test = encoder.transform(y_test)
-        y_val = encoder.transform(y_val)
+        self.encoder = LabelBinarizer()
+        y_train = self.encoder.fit_transform(y_train)
+        y_val = self.encoder.transform(y_val)
 
         # translation dictionary from word/letter to vector
         word_vec_dict = self.build_word_vec_dict(x_train)
@@ -302,46 +296,54 @@ class LstmModel:
         # corpus text is used for training the tokenizer, df_text is used for tokenization of the whole dataset
         corpus_text, df_text = self.get_corpus_and_df_text(x_train)
 
-        tok = Tokenizer()
-        tok.fit_on_texts(corpus_text)
-        tokenized_text = tok.texts_to_sequences(df_text)
+        self.tok = Tokenizer()
+        self.tok.fit_on_texts(corpus_text)
+        tokenized_text = self.tok.texts_to_sequences(df_text)
 
-        max_len = self.calculate_max_len(x_train)
-        pad_rev = pad_sequences(tokenized_text, maxlen=max_len, padding='post')
+        self.max_len = self.calculate_max_len(x_train)
+        pad_rev = pad_sequences(tokenized_text, maxlen=self.max_len, padding='post')
 
         x_train_ind = x_train.index
         x_train_input1 = pad_rev[x_train_ind]
-        # x_train_input2 = x_train[all_stylometry]
-        # x_test_input1 = pad_rev[x_test.index]
-        # x_test_input2 = x_test[all_stylometry]
         x_val_input1 = pad_rev[x_val.index]
-        # x_val_input2 = x_val[all_stylometry]
 
-        vocab_size = len(tok.word_index) + 1
-        embed_matrix = self.build_embedding_matrix(tok, word_vec_dict, vocab_size)
+        vocab_size = len(self.tok.word_index) + 1
+        embed_matrix = self.build_embedding_matrix(self.tok, word_vec_dict, vocab_size)
         callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 
-        model = self.build_network(max_len=max_len, vocab_size=vocab_size, embed_matrix=embed_matrix, encoder=encoder)
+        self.model = self.build_network(max_len=self.max_len, vocab_size=vocab_size, embed_matrix=embed_matrix, encoder=self.encoder)
 
-        for i in range(int(1//self.batch_ratio)):
-            print("Batch: ", i)
+        # for i in range(int(1//self.batch_ratio)):
+        #     print("Batch: ", i)
 
-            x_train_input1_batch = self.slice_batch(x_train_input1, i)
+        #     x_train_input1_batch = self.slice_batch(x_train_input1, i)
             # x_train_input2_batch = self.slice_batch(x_train_input2, i)
-            y_train_batch = self.slice_batch(y_train, i)
+        #     y_train_batch = self.slice_batch(y_train, i)
 
-            x_val_input1_batch = self.slice_batch(x_val_input1, i)
+        #     x_val_input1_batch = self.slice_batch(x_val_input1, i)
             # x_val_input2_batch = self.slice_batch(x_val_input2, i)
-            y_val_batch = self.slice_batch(y_val, i)
+        #     y_val_batch = self.slice_batch(y_val, i)
 
-            model.fit([x_train_input1_batch], y_train_batch, epochs=1000,
-                      validation_data=([x_val_input1_batch], y_val_batch), batch_size=32, callbacks=[callback])
+        self.model.fit([x_train_input1], y_train, epochs=1000, validation_data=([x_val_input1], y_val),
+                       batch_size=32, callbacks=[callback])
 
         # results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
         # print(results)
 
-    def evaluate(self, df: pd.DataFrame):
-        pass
+    def evaluate(self, df: pd.Series):
+        y_test = self.encoder.transform(df['author'])
+        y_test = np.argmax(y_test, axis=1)
+
+        text_list = df["text"].tolist()
+        text_list = [text.replace(" ", "") for text in text_list]
+        corpus_text = [[*text] for text in text_list]
+        tokenized_text = self.tok.texts_to_sequences(corpus_text)
+        pad_rev = pad_sequences(tokenized_text, maxlen=self.max_len, padding='post')
+
+        predicted = self.model.predict(pad_rev)
+        predicted = np.argmax(predicted, axis=1)
+        print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
+
 
 
 """def tfidf_random_forest(df: pd.DataFrame):
@@ -600,8 +602,11 @@ def experiment():
     # print("Time to fit data: ", end_time - start_time)
     # print(ensamble_model.evaluate(df_enron_test))
 
+    start_time = time.time()
     lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=10000)
     lstm_model.run_lstm_model()
+    end_time = time.time()
+    print("Time to fit data: ", end_time - start_time)
     print(lstm_model.evaluate(df_enron_test))
 
 
