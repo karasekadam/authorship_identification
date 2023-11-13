@@ -35,159 +35,14 @@ flags.FLAGS(sys.argv)
 # nltk.download('punkt')
 
 
-stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase", "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars", "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
+stylometry_names = ["num_of_words", "num_of_sentences", "num_of_lines", "num_of_uppercase", "num_of_titlecase",
+                    "average_len_of_words", "num_of_punctuation", "num_of_special_chars", "num_of_chars",
+                    "num_of_stopwords", "num_of_unique_words", "num_of_digits"]
 
 header_metadata_columns = ["sent_hour", "subject_num_of_words", "subject_num_of_char", "subject_num_of_uppercase_char",
                            "num_od_numeric_char", "num_of_punctuation_marks", "num_of_addressees",
                            "num_of_addressees_from_same_domain", "num_of_cc", "num_of_cc_from_same_domain"]
 all_stylometry = header_metadata_columns + stylometry_names
-
-
-# multilayer perceptron model with different options for text embedding
-"""class MlpModel:
-    def __init__(self, model_type: str, batch_ratio: float) -> None:
-        self.model_type = model_type
-        self.model = None
-        self.data_transformer = None
-        self.batch_ratio = batch_ratio
-        self.encoder = None
-        self.scaler = None
-        self.x_train = None
-        self.x_test = None
-        self.x_val = None
-        self.y_train = None
-        self.y_test = None
-        self.y_val = None
-
-    def init_model(self) -> None:
-        if self.model_type == "tfidf":
-            input_dim = self.data_transformer.idf_.shape[0] + len(all_stylometry) - 1
-        elif self.model_type == "word2vec-avg":
-            input_dim = self.data_transformer.vector_size + len(all_stylometry)
-        elif self.model_type == "glove-avg":
-            input_dim = 300 + len(all_stylometry)
-        elif self.model_type == "doc2vec":
-            input_dim = 1024 + len(all_stylometry)
-        elif self.model_type == "glove-padd":
-            input_dim = 300 + len(all_stylometry)
-        else:
-            raise ValueError("Model type not recognized")
-
-        if self.model_type == "tfidf" or self.model_type == "glove-padd":
-            dense_size = 1024
-        else:
-            dense_size = input_dim
-
-        output_dim = self.encoder.classes_.shape[0]
-
-        model = Sequential()
-        model.add(Dense(dense_size, activation='relu', input_dim=input_dim))
-        model.add(Dense(dense_size, activation='relu'))
-        model.add(Dense(dense_size, activation='relu'))
-        model.add(Dense(output_dim, activation='softmax'))
-        model.compile(optimizer=Adam(learning_rate=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
-        self.model = model
-        model.summary()
-
-    def fit_data(self, df: pd.DataFrame) -> None:
-        df = df.drop(columns=['path'], inplace=False)
-
-        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(df.drop(columns=['author']),
-                                                            df['author'], test_size=0.2)
-        self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(self.x_train, self.y_train,
-                                                                              test_size=0.2)
-
-        self.encoder = LabelBinarizer()
-        # self.y_train = self.y_train.astype(str)
-        self.encoder.fit(self.y_train)
-        self.scaler = MinMaxScaler()
-
-        numerical_data = self.x_train[all_stylometry]
-        self.scaler.fit(numerical_data)
-
-        if self.model_type == "tfidf":
-            self.data_transformer = process_text.create_tf_idf(self.x_train)
-        elif self.model_type == "word2vec-avg":
-            self.data_transformer = process_text.create_word2vec(self.x_train)
-        elif self.model_type == "glove-avg":
-            self.data_transformer = process_text.glove_load()
-        elif self.model_type == "glove-padd":
-            self.data_transformer = process_text.glove_padd_embedding(self.x_train, 5)
-        elif self.model_type == "doc2vec":
-            self.data_transformer = process_text.create_doc2vec(self.x_train)
-
-    def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
-        lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
-        upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
-        return df_to_slice[lower_index:upper_index]
-
-    def train_model(self) -> None:
-        self.init_model()
-
-        for i in range(int(1//self.batch_ratio)):
-            print("Batch: ", i)
-
-            X_train = self.slice_batch(self.x_train, i)
-            X_val = self.slice_batch(self.x_val, i)
-            y_train = self.slice_batch(self.y_train, i)
-            y_val = self.slice_batch(self.y_val, i)
-
-            if self.model_type == "word2vec-avg":
-                X_train = process_text.embed_df_word2vec(X_train, self.data_transformer)
-                X_val = process_text.embed_df_word2vec(X_val, self.data_transformer)
-            elif self.model_type == "tfidf":
-                X_train = process_text.transform_tf_idf(X_train, self.data_transformer)
-                X_val = process_text.transform_tf_idf(X_val, self.data_transformer)
-            elif self.model_type == "glove-avg":
-                X_train = process_text.glove_avg_embedding(X_train, self.data_transformer)
-                X_val = process_text.glove_avg_embedding(X_val, self.data_transformer)
-            elif self.model_type == "doc2vec":
-                X_train = process_text.embed_doc2vec(X_train, self.data_transformer)
-                X_val = process_text.embed_doc2vec(X_val, self.data_transformer)
-
-            y_train = self.encoder.transform(y_train)
-            y_val = self.encoder.transform(y_val)
-
-            X_train[all_stylometry] = self.scaler.transform(X_train[all_stylometry])
-            X_val[all_stylometry] = self.scaler.transform(X_val[all_stylometry])
-
-            self.model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val))
-            gc.collect()
-
-        print("saving")
-        self.model.save("model.keras", overwrite=True)
-
-        print("testing")
-        self.test_model()
-
-    def test_model(self) -> None:
-        accuracy_list = []
-        for i in range(int(1 // self.batch_ratio)):
-            X_test = self.slice_batch(self.x_test, i)
-            y_test = self.slice_batch(self.y_test, i)
-
-            if self.model_type == "word2vec-avg":
-                X_test = process_text.embed_df_word2vec(X_test, self.data_transformer)
-            elif self.model_type == "tfidf":
-                X_test = process_text.transform_tf_idf(X_test, self.data_transformer)
-            elif self.model_type == "glove-avg":
-                X_test = process_text.glove_avg_embedding(X_test, self.data_transformer)
-            elif self.model_type == "doc2vec":
-                X_test = process_text.embed_doc2vec(X_test, self.data_transformer)
-
-            y_test = self.encoder.transform(y_test)
-            X_test[all_stylometry] = self.scaler.transform(X_test[all_stylometry])
-
-            results = self.model.evaluate(X_test, y_test, verbose=0)
-            accuracy_list.append(results[1])
-            gc.collect()
-
-        final_accuracy = np.mean(accuracy_list)
-        print(f"Final accuracy is {final_accuracy}")
-
-    def evaluate_load_model(self, path: str) -> None:
-        self.model = load_model(path)
-        self.test_model()"""
 
 
 class LstmModel:
@@ -220,7 +75,7 @@ class LstmModel:
 
         model.summary()
 
-        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-3), metrics=['accuracy'])
+        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
 
         return model
 
@@ -309,26 +164,13 @@ class LstmModel:
 
         vocab_size = len(self.tok.word_index) + 1
         embed_matrix = self.build_embedding_matrix(self.tok, word_vec_dict, vocab_size)
-        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
 
-        self.model = self.build_network(max_len=self.max_len, vocab_size=vocab_size, embed_matrix=embed_matrix, encoder=self.encoder)
-
-        # for i in range(int(1//self.batch_ratio)):
-        #     print("Batch: ", i)
-
-        #     x_train_input1_batch = self.slice_batch(x_train_input1, i)
-            # x_train_input2_batch = self.slice_batch(x_train_input2, i)
-        #     y_train_batch = self.slice_batch(y_train, i)
-
-        #     x_val_input1_batch = self.slice_batch(x_val_input1, i)
-            # x_val_input2_batch = self.slice_batch(x_val_input2, i)
-        #     y_val_batch = self.slice_batch(y_val, i)
+        self.model = self.build_network(max_len=self.max_len, vocab_size=vocab_size, embed_matrix=embed_matrix,
+                                        encoder=self.encoder)
 
         self.model.fit([x_train_input1], y_train, epochs=1000, validation_data=([x_val_input1], y_val),
-                       batch_size=32, callbacks=[callback])
-
-        # results = model.evaluate([x_test_input1, x_test_input2], y_test, verbose=0)
-        # print(results)
+                       batch_size=64, callbacks=[callback])
 
     def evaluate(self, df: pd.Series):
         y_test = self.encoder.transform(df['author'])
@@ -343,34 +185,6 @@ class LstmModel:
         predicted = self.model.predict(pad_rev)
         predicted = np.argmax(predicted, axis=1)
         print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
-
-
-
-"""def tfidf_random_forest(df: pd.DataFrame):
-    df = df.drop(columns=['path'], inplace=False)
-    X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['author']), df['author'], test_size=0.2)
-
-    encoder = LabelBinarizer()
-    encoder.fit(y_train)
-    scaler = MinMaxScaler()
-
-    # numerical_data = X_train[all_stylometry]
-    scaler.fit(X_train[all_stylometry])
-    X_train[all_stylometry] = scaler.transform(X_train[all_stylometry])
-    X_test[all_stylometry] = scaler.transform(X_test[all_stylometry])
-
-    data_transformer = process_text.create_tf_idf(X_train)
-
-    X_train = process_text.transform_tf_idf(X_train, data_transformer)
-    X_test = process_text.transform_tf_idf(X_test, data_transformer)
-
-    y_train = encoder.transform(y_train)
-    y_test = encoder.transform(y_test)
-
-    clf = RandomForestClassifier(n_estimators=100, min_samples_split=2, bootstrap=True,
-                                 criterion="gini", min_samples_leaf=1)
-    clf.fit(X_train, y_train)
-    print(clf.score(X_test, y_test))"""
 
 
 class EnsembleModel:
@@ -584,7 +398,7 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)

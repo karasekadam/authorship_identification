@@ -8,12 +8,14 @@ def experiment_dataset_avg_length(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    text_data = pd.read_csv("experiment_sets/techcrunch_experiment_sample_5.csv", index_col=0)
+    text_data = pd.read_csv("experiment_sets/telegram_experiment_sample_25.csv", index_col=0)
     experiment_dataset_avg_length(text_data)
     text_data["text"] = text_data["text"].astype(str)
     text_data["len"] = text_data["text"].str.len()
     average_text_length = text_data["len"].mean()
+    median_text_length = text_data["len"].median()
     print(f"Average text length {average_text_length}.")
+    print(f"Median text length {median_text_length}.")
 
     text_data = text_data[text_data["text"].apply(lambda x: len(x) > 5000)]
     print(f"Number of texts with more than 5000 characters {len(text_data)}.")
