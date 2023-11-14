@@ -98,11 +98,6 @@ class LstmModelStylometry:
 
         return max_len
 
-    def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
-        lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
-        upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
-        return df_to_slice[lower_index:upper_index]
-
     def build_embedding_matrix(self, tok: Tokenizer, word_vec_dict: dict, vocab_size: int) -> np.ndarray:
         embed_matrix = np.zeros(shape=(vocab_size, self.embed_dim))
         for word, i in tok.word_index.items():
@@ -193,7 +188,7 @@ class LstmModelStylometry:
         print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
 
 
-class LstmModelEmbedding:
+class LstmModelEmbeddingStylometry:
     def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
                  batch_ratio: float = 1, max_len: int = 256) -> None:
         self.df = df
@@ -247,62 +242,6 @@ class LstmModelEmbedding:
 
         return max_len
 
-    def slice_batch(self, df_to_slice: pd.DataFrame, iter_i: int) -> pd.DataFrame:
-        lower_index = floor(iter_i*self.batch_ratio*len(df_to_slice))
-        upper_index = floor((iter_i+1)*self.batch_ratio*len(df_to_slice))
-        return df_to_slice[lower_index:upper_index]
-
-    def build_embedding_matrix(self, tok: Tokenizer, word_vec_dict: dict, vocab_size: int) -> np.ndarray:
-        embed_matrix = np.zeros(shape=(vocab_size, self.embed_dim))
-        for word, i in tok.word_index.items():
-            embed_vector = word_vec_dict.get(word)
-            if embed_vector is not None:  # word is in the vocabulary learned by the w2v model
-                embed_matrix[i] = embed_vector
-
-        return embed_matrix
-
-    def get_corpus_and_df_text(self, x_texts: pd.DataFrame) -> tuple:
-        if self.embed_letters:
-            text_list = x_texts["text"].tolist()
-            text_list = [text.replace(" ", "") for text in text_list]
-            corpus_text = [[*text] for text in text_list]
-
-            df_text = self.df["text"].tolist()
-            df_text = [text.replace(" ", "") for text in df_text]
-            df_text = [[*text] for text in df_text]
-        else:
-            corpus_text = x_texts
-            df_text = self.df['text']
-
-        return corpus_text, df_text
-
-    def build_word_vec_dict(self, x_train: pd.Series) -> dict:
-        if self.embed_letters:
-            w2v_model = process_text.create_word2vec_letters(x_train)
-        else:
-            w2v_model = process_text.create_word2vec(x_train)
-
-        vocab = w2v_model.wv.key_to_index
-        vocab = list(vocab.keys())
-        word_vec_dict = {}
-        for word in vocab:
-            word_vec_dict[word] = w2v_model.wv.get_vector(word)
-
-        return word_vec_dict
-
-    def text_to_vec(self, text: str) -> np.ndarray:
-        text = text.replace(" ", "")
-        text = [*text]
-        vectors = []
-        for letter in text:
-            try:
-                vector = self.w2v_model.wv.get_vector(letter)
-                vectors.append(vector)
-            except KeyError:
-                vectors.append([0 * self.embed_dim])
-        pad_rev = pad_sequences(vectors, maxlen=self.max_len, padding='post')
-        return pad_rev
-
     def texts_to_vec(self, texts: list) -> list[list[float]]:
         vectors = np.ndarray(shape=(len(texts), self.max_len, self.embed_dim))
         for i, text in enumerate(texts):
@@ -353,6 +292,104 @@ class LstmModelEmbedding:
         input_2 = self.scaler.transform(df[header_metadata_columns])
 
         predicted = self.model.predict([input_1, input_2])
+        predicted = np.argmax(predicted, axis=1)
+        print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
+
+
+class LstmModelEmbedding:
+    def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
+                 batch_ratio: float = 1, max_len: int = 256) -> None:
+        self.df = df
+        self.embed_letters = embed_letters
+        self.limited_len = limited_len
+        self.embed_dim = embed_dim  # size of vector to which words/letters are embedded
+        self.batch_ratio = batch_ratio
+        self.max_len = max_len
+        self.encoder = None
+        self.tok = None
+        self.model = None
+        self.w2v_model = None
+        self.scaler = None
+
+    # builds neural network architecture for lstm model
+    def build_network(self) -> Model:
+        input1 = Input(shape=(self.max_len, self.embed_dim))
+        # embed = Embedding(input_dim=vocab_size, output_dim=self.embed_dim, input_length=max_len,
+        #                   embeddings_initializer=Constant(embed_matrix))(input1)
+        lstm = Bidirectional(LSTM(256, return_sequences=True))(input1)  # jde zkusit bez return sequences
+        maxpool = GlobalMaxPooling1D(data_format='channels_first')(lstm)
+        drop = Dropout(0.50)(maxpool)
+        softmax = Softmax()(drop)
+
+        dense = Dense(256, activation='relu')(softmax)
+        dropout = Dropout(0.50)(dense)
+        output = Dense(self.encoder.classes_.shape[0], activation='softmax')(dropout)
+        model = Model(inputs=[input1], outputs=output)
+
+        model.summary()
+
+        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
+
+        return model
+
+    def calculate_max_len(self, x_texts: pd.Series) -> int:
+        if self.limited_len:
+            max_len = self.max_len
+        else:
+            if self.embed_letters:
+                x_texts_list = x_texts.tolist()
+                x_texts_len = list(map(lambda x: len(x), x_texts_list))
+                max_len = max(x_texts_len)
+            else:
+                x_texts_list = x_texts.tolist()
+                x_texts_len = list(map(lambda x: len(x.split()), x_texts_list))
+                max_len = max(x_texts_len)
+
+        return max_len
+
+    def texts_to_vec(self, texts: list) -> list[list[float]]:
+        vectors = np.ndarray(shape=(len(texts), self.max_len, self.embed_dim))
+        for i, text in enumerate(texts):
+            text = text.replace(" ", "")
+            text = [*text]
+            for l, letter in enumerate(text):
+                if l >= self.max_len:
+                    break
+                try:
+                    vectors[i][l] = self.w2v_model.wv.get_vector(letter)
+                except KeyError:
+                    continue
+        return vectors
+
+    # lstm model with word2vec embedding, option to use words or letters and length of input text
+    def run_lstm_model(self) -> None:
+        x_train, x_val, y_train, y_val = train_test_split(self.df[["text"] + header_metadata_columns], self.df['author'], test_size=0.2)
+
+        self.encoder = LabelBinarizer()
+        y_train = self.encoder.fit_transform(y_train)
+        y_val = self.encoder.transform(y_val)
+
+        self.w2v_model = process_text.create_word2vec_letters(x_train["text"])
+
+        self.max_len = self.calculate_max_len(x_train)
+
+        x_train_input1 = self.texts_to_vec(x_train["text"])
+        x_val_input1 = self.texts_to_vec(x_val["text"])
+
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
+
+        self.model = self.build_network()
+
+        self.model.fit([x_train_input1], y_train, epochs=1000,
+                       validation_data=([x_val_input1], y_val), batch_size=64, callbacks=[callback])
+
+    def evaluate(self, df: pd.Series):
+        y_test = self.encoder.transform(df['author'])
+        y_test = np.argmax(y_test, axis=1)
+
+        input_1 = self.texts_to_vec(df["text"])
+
+        predicted = self.model.predict([input_1])
         predicted = np.argmax(predicted, axis=1)
         print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
 

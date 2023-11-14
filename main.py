@@ -202,6 +202,7 @@ class EnsembleModel:
         self.mlp = None
         self.encoder = None
         self.data_transformer = None
+        self.scaler = None
 
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df[["author", "text"]]
@@ -219,10 +220,13 @@ class EnsembleModel:
         # transforms text to count vector
         self.data_transformer = process_text.create_count_vector(self.x_train)
         self.x_train = process_text.transform_count_vector(self.x_train, self.data_transformer)
+        self.scaler = MinMaxScaler()
+        self.x_train = self.scaler.fit_transform(self.x_train)
         self.x_val = process_text.transform_count_vector(self.x_val, self.data_transformer)
+        self.x_val = self.scaler.transform(self.x_val)
 
     def init_mlp(self):
-        input_dim = len(self.x_train.columns)
+        input_dim = self.x_train.shape[1]
         print("Input length: ", input_dim)
         dense_size = self.size_of_layer
         output_dim = self.encoder.classes_.shape[0]
@@ -248,7 +252,7 @@ class EnsembleModel:
 
     def train_models(self):
         self.init_mlp()
-        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
         self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
                      callbacks=[callback])
 
@@ -259,6 +263,9 @@ class EnsembleModel:
         self.xgboost.fit(self.x_train, self.y_train)
 
     def predict(self, df: pd.DataFrame):
+        df = process_text.transform_tf_idf(df["text"], self.data_transformer)
+        df = self.scaler.transform(df)
+
         # each model predicts the author
         random_forest_pred = self.random_forest.predict(df)
         random_forest_pred_onehot = OneHotEncoder(sparse=False).fit_transform(np.array(random_forest_pred.reshape(-1, 1)))
@@ -277,15 +284,19 @@ class EnsembleModel:
     def evaluate(self, df: pd.DataFrame):
         y_test_one_hot = self.encoder.transform(df['author'])
         y_test = np.argmax(y_test_one_hot, axis=1)
-        x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
+        # x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
 
-        predicted, _, _, _ = self.predict(x_test)
+        predicted, _, _, _ = self.predict(df)
 
-        predicted, rf_pred, xgb_pred, mlp_pred = self.predict(x_test)
+        predicted, rf_pred, xgb_pred, mlp_pred = self.predict(df)
         print("Ensemble accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
         print("Random forest accuracy: ", accuracy_score(y_true=y_test, y_pred=rf_pred))
         print("XGB classifier accuracy: ", accuracy_score(y_true=y_test, y_pred=xgb_pred))
         print("MLP accuracy: ", accuracy_score(y_true=y_test, y_pred=mlp_pred))
+
+        df = df.merge(pd.DataFrame(predicted, columns=["predicted"]), left_index=True, right_index=True)
+        df = df.merge(pd.DataFrame(y_test, columns=["label"]), left_index=True, right_index=True)
+        df.to_csv("experiment_sets/telegram_experiment_sample_5_predicted.csv")
 
         acc = accuracy_score(y_test, predicted)
         return acc
@@ -398,7 +409,7 @@ class BertAAModel:
 
 
 def experiment():
-    df_enron = pd.read_csv("experiment_sets/telegram_experiment_sample_5.csv", index_col=0)
+    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)
@@ -409,19 +420,19 @@ def experiment():
     # print(bert_model.evaluate(df_enron_test))
 
     # start_time = time.time()
-    # ensamble_model = EnsembleModel(size_of_layer=1024)
-    # ensamble_model.fit_data(df_enron_train)
-    # ensamble_model.train_models()
+    ensamble_model = EnsembleModel(size_of_layer=1024)
+    ensamble_model.fit_data(df_enron_train)
+    ensamble_model.train_models()
     # end_time = time.time()
     # print("Time to fit data: ", end_time - start_time)
-    # print(ensamble_model.evaluate(df_enron_test))
+    print(ensamble_model.evaluate(df_enron_test))
 
-    start_time = time.time()
-    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=10000)
-    lstm_model.run_lstm_model()
-    end_time = time.time()
-    print("Time to fit data: ", end_time - start_time)
-    print(lstm_model.evaluate(df_enron_test))
+    # start_time = time.time()
+    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=10000)
+    # lstm_model.run_lstm_model()
+    # end_time = time.time()
+    # print("Time to fit data: ", end_time - start_time)
+    # print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
