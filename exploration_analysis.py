@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 
 
 def experiment_dataset_avg_length(df: pd.DataFrame):
@@ -28,3 +29,19 @@ if __name__ == "__main__":
     text_data["len"] = text_data["text"].str.len()
     text_data = text_data.sort_values(by=["len"], ascending=False)
     # print(text_data.head(10)["path"])
+
+    with open("email_content_3.json") as file:
+        email_content = file.read()
+        email_content = email_content.replace("ObjectId", "")
+        email_content = email_content.replace("(", "")
+        email_content = email_content.replace(")", "")
+        email_content = email_content.replace("}", "},")
+        email_content = "[" + email_content + "]"
+        email_content = email_content[:-3] + email_content[-2:].replace(",", "")
+        with open("email_content_3_clean.json", "w") as file2:
+            file2.write(email_content)
+        print(email_content[0])
+    with open("email_content_3_clean.json") as file:
+        email_content = json.load(file)
+        print(email_content[0]["content"])
+

@@ -64,18 +64,19 @@ class LstmModel:
         embed = Embedding(input_dim=vocab_size, output_dim=self.embed_dim, input_length=max_len,
                           embeddings_initializer=Constant(embed_matrix))(input1)
         lstm = Bidirectional(LSTM(256, return_sequences=True))(embed)  # jde zkusit bez return sequences
-        maxpool = GlobalMaxPooling1D(data_format='channels_first')(lstm)
-        drop = Dropout(0.50)(maxpool)
-        softmax = Softmax()(drop)
+        maxpool = GlobalMaxPooling1D()(lstm)
+        drop = Dropout(0.5)(maxpool)
+        softmax = Dense(encoder.classes_.shape[0], activation="softmax")(drop)
 
-        dense = Dense(256, activation='relu')(softmax)
-        dropout = Dropout(0.50)(dense)
+        dense = Dense(256)(softmax)
+        dropout = Dropout(0.5)(dense)
         output = Dense(encoder.classes_.shape[0], activation='softmax')(dropout)
         model = Model(inputs=[input1], outputs=output)
 
         model.summary()
 
-        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
+        model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-3),
+                      metrics=['categorical_accuracy'])
 
         return model
 
@@ -396,7 +397,7 @@ class BertAAModel:
             validation_split=0.2,
             epochs=1,
             callbacks=[checkpoint, earlystopping],
-            batch_size=16,
+            batch_size=8,
             verbose=1
         )
 
@@ -408,8 +409,8 @@ class BertAAModel:
         return acc
 
 
-def experiment():
-    df_enron = pd.read_csv("experiment_sets/enron_experiment_sample_5.csv", index_col=0)
+def experiment(dataset_file):
+    df_enron = pd.read_csv(dataset_file, index_col=0)
     df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
     df_enron_train = df_enron_train.reset_index(drop=True)
     df_enron_test = df_enron_test.reset_index(drop=True)
@@ -420,23 +421,33 @@ def experiment():
     # print(bert_model.evaluate(df_enron_test))
 
     # start_time = time.time()
-    ensamble_model = EnsembleModel(size_of_layer=1024)
-    ensamble_model.fit_data(df_enron_train)
-    ensamble_model.train_models()
+    # ensamble_model = EnsembleModel(size_of_layer=1024)
+    # ensamble_model.fit_data(df_enron_train)
+    # ensamble_model.train_models()
     # end_time = time.time()
     # print("Time to fit data: ", end_time - start_time)
-    print(ensamble_model.evaluate(df_enron_test))
+    # print(ensamble_model.evaluate(df_enron_test))
 
-    # start_time = time.time()
-    # lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=10000)
-    # lstm_model.run_lstm_model()
-    # end_time = time.time()
-    # print("Time to fit data: ", end_time - start_time)
-    # print(lstm_model.evaluate(df_enron_test))
+    start_time = time.time()
+    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
+    lstm_model.run_lstm_model()
+    end_time = time.time()
+    print("Time to fit data: ", end_time - start_time)
+    print(lstm_model.evaluate(df_enron_test))
 
 
 if __name__ == "__main__":
-    experiment()
+    experiment("experiment_sets/enron_experiment_sample_5.csv")
+    experiment("experiment_sets/enron_experiment_sample_5.csv")
+    experiment("experiment_sets/enron_experiment_sample_5.csv")
+
+    experiment("experiment_sets/enron_experiment_sample_10.csv")
+    experiment("experiment_sets/enron_experiment_sample_10.csv")
+    experiment("experiment_sets/enron_experiment_sample_10.csv")
+
+    experiment("experiment_sets/enron_experiment_sample_25.csv")
+    experiment("experiment_sets/enron_experiment_sample_25.csv")
+    experiment("experiment_sets/enron_experiment_sample_25.csv")
 
     # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # mlp_model.fit_data(df)
