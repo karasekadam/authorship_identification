@@ -125,10 +125,10 @@ def glove_padd_embedding(df: pd.DataFrame, padd: int) -> pd.DataFrame:
         pass
 
 
-def create_doc2vec(df: pd.DataFrame) -> Doc2Vec:
+def create_doc2vec(df: pd.DataFrame, vector_size) -> Doc2Vec:
     texts = df["text"].tolist()
     tagged_data = [TaggedDocument(words=word_tokenize(_d), tags=[str(i)]) for i, _d in enumerate(texts)]
-    model = Doc2Vec(vector_size=1024, min_count=2, epochs=30, workers=7)
+    model = Doc2Vec(vector_size=vector_size, min_count=2, epochs=30, workers=7)
     model.build_vocab(tagged_data)
     model.train(tagged_data, total_examples=model.corpus_count, epochs=model.epochs)
     return model

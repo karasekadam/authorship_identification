@@ -2,29 +2,25 @@ import numpy as np
 import pandas as pd
 from keras.src.optimizers import Adam
 from keras.utils import pad_sequences
-from keras import Sequential, Model
-from keras.layers import (Dense, Input, Concatenate, Dropout, LSTM, Embedding, Flatten,
-                          Bidirectional, MaxPooling1D, Softmax, GlobalMaxPooling1D)
-from keras.models import load_model
+from keras import Sequential, Model, regularizers
+from keras.layers import (Dense, Input, Dropout, LSTM, Embedding,
+                          Bidirectional, GlobalMaxPooling1D)
 from keras.initializers import Constant
 from keras.preprocessing.text import Tokenizer
 import process_text
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer, OneHotEncoder
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, mean_squared_error
 from math import floor
-import gc
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
-import tensorflow_hub as hub
 import tensorflow as tf
-from keras import regularizers
-from keras.utils import to_categorical
-from sklearn import preprocessing
 import sys
 from absl import flags
-from bert.tokenization import FullTokenizer
+import os
 import time
+from simpletransformers.classification import ClassificationModel
+from simpletransformers.config.model_args import ClassificationArgs
 sys.argv=['preserve_unused_tokens=False']
 flags.FLAGS(sys.argv)
 
@@ -183,9 +179,12 @@ class LstmModel:
         tokenized_text = self.tok.texts_to_sequences(corpus_text)
         pad_rev = pad_sequences(tokenized_text, maxlen=self.max_len, padding='post')
 
-        predicted = self.model.predict(pad_rev)
-        predicted = np.argmax(predicted, axis=1)
+        predicted_onehot = self.model.predict(pad_rev)
+        predicted = np.argmax(predicted_onehot, axis=1)
         print("BiLSTM accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
+
+        predicted_names = self.encoder.inverse_transform(predicted_onehot)
+        return predicted_names
 
 
 class EnsembleModel:
@@ -287,20 +286,15 @@ class EnsembleModel:
         y_test = np.argmax(y_test_one_hot, axis=1)
         # x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
 
-        predicted, _, _, _ = self.predict(df)
-
         predicted, rf_pred, xgb_pred, mlp_pred = self.predict(df)
         print("Ensemble accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))
         print("Random forest accuracy: ", accuracy_score(y_true=y_test, y_pred=rf_pred))
         print("XGB classifier accuracy: ", accuracy_score(y_true=y_test, y_pred=xgb_pred))
         print("MLP accuracy: ", accuracy_score(y_true=y_test, y_pred=mlp_pred))
 
-        df = df.merge(pd.DataFrame(predicted, columns=["predicted"]), left_index=True, right_index=True)
-        df = df.merge(pd.DataFrame(y_test, columns=["label"]), left_index=True, right_index=True)
-        df.to_csv("experiment_sets/telegram_experiment_sample_5_predicted.csv")
+        onehot_results = OneHotEncoder(sparse=False).fit_transform(np.array(predicted.reshape(-1, 1)))
 
-        acc = accuracy_score(y_test, predicted)
-        return acc
+        return self.encoder.inverse_transform(onehot_results)
 
 
 def softmax_to_binary(softmax_pred: np.ndarray) -> np.ndarray:
@@ -312,142 +306,122 @@ def softmax_to_binary(softmax_pred: np.ndarray) -> np.ndarray:
     return binary_pred
 
 
+def early_stop(patience: int, loss_queue: list) -> bool:
+    if len(loss_queue) < patience:
+        return False
+    else:
+        for i in range(len(loss_queue)):
+            if loss_queue[0] > loss_queue[i]:
+                loss_queue.pop(0)
+                return False
+        return True
+
+
 class BertAAModel:
-    # zdroj: https://www.kaggle.com/code/nayansakhiya/text-classification-using-bert
-    def __init__(self, max_len: int):
+    def __init__(self):
         self.model = None
-        self.max_len = max_len
-        self.bert_layer = None
-        self.tokenizer = None
         self.encoder = None
 
-        self.x_train = None
-        self.y_train = None
+    def train_model(self, authors_num: int, df: pd.DataFrame):
+        print("Number of authors : ", authors_num)
+        self.encoder = LabelBinarizer()
+        one_hot = self.encoder.fit_transform(df['author'])
+        argmax = np.argmax(one_hot, axis=1)
+        df['author'] = argmax
 
-    def bert_encode(self, texts, tokenizer, max_len=512):
-        all_tokens = []
-        all_masks = []
-        all_segments = []
+        nlp_train, nlp_val = train_test_split(df[['text', 'author']], test_size=0.2)
 
-        for text in texts:
-            text = tokenizer.tokenize(text)
-
-            text = text[:max_len - 2]
-            input_sequence = ["[CLS]"] + text + ["[SEP]"]
-            pad_len = max_len - len(input_sequence)
-
-            tokens = tokenizer.convert_tokens_to_ids(input_sequence) + [0] * pad_len
-            pad_masks = [1] * len(input_sequence) + [0] * pad_len
-            segment_ids = [0] * max_len
-
-            all_tokens.append(tokens)
-            all_masks.append(pad_masks)
-            all_segments.append(segment_ids)
-
-        return np.array(all_tokens), np.array(all_masks), np.array(all_segments)
-
-    def build_model(self, bert_layer, max_len=512):
-        input_word_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_word_ids")
-        input_mask = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="input_mask")
-        segment_ids = tf.keras.Input(shape=(max_len,), dtype=tf.int32, name="segment_ids")
-
-        pooled_output, sequence_output = bert_layer([input_word_ids, input_mask, segment_ids])
-        bert_layer.trainable = True
-
-        clf_output = sequence_output[:, 0, :]
-
-        # lay = tf.keras.layers.Dense(64, activation='relu')(clf_output)
-        # lay = tf.keras.layers.Dropout(0.2)(lay)
-        # lay = tf.keras.layers.Dense(32, activation='relu')(lay)
-        # lay = tf.keras.layers.Dropout(0.2)(lay)
-        out = tf.keras.layers.Dense(5, activation='softmax')(clf_output)
-
-        model = tf.keras.models.Model(inputs=[input_word_ids, input_mask, segment_ids], outputs=out)
-        model.compile(tf.keras.optimizers.Adam(lr=1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
-
-        return model
-
-    def fit_data(self, df: pd.DataFrame) -> None:
-        train_data = df
-
-        self.encoder = preprocessing.LabelEncoder()
-        y = self.encoder.fit_transform(train_data['author'])
-        y = to_categorical(y)
-
-        m_url = 'https://tfhub.dev/tensorflow/bert_en_cased_L-12_H-768_A-12/2'
-        self.bert_layer = hub.KerasLayer(m_url, trainable=True)
-
-        vocab_file = self.bert_layer.resolved_object.vocab_file.asset_path.numpy()
-        do_lower_case = self.bert_layer.resolved_object.do_lower_case.numpy()
-        self.tokenizer = FullTokenizer(vocab_file, do_lower_case)
-
-        self.x_train = self.bert_encode(train_data["text"], tokenizer=self.tokenizer, max_len=self.max_len)
-        self.y_train = y
-
-    def train_model(self):
-        self.model = self.build_model(self.bert_layer, max_len=self.max_len)
-        self.model.summary()
-
-        checkpoint = tf.keras.callbacks.ModelCheckpoint('model.h5', monitor='val_accuracy', save_best_only=True,
-                                                        verbose=1)
-        earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=10, verbose=1)
-
-        train_sh = self.model.fit(
-            self.x_train, self.y_train,
-            validation_split=0.2,
-            epochs=1,
-            callbacks=[checkpoint, earlystopping],
-            batch_size=8,
-            verbose=1
+        model_args = ClassificationArgs(
+            use_multiprocessing=False,
+            use_multiprocessing_for_evaluation=False,
+            reprocess_input_data=True,
+            overwrite_output_dir=True,
+            num_train_epochs=1,
+            no_save=True,
+            save_eval_checkpoints=False,
+            save_model_every_epoch=False,
+            save_optimizer_and_scheduler=False
         )
 
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        self.model = ClassificationModel('bert', 'bert-base-cased', num_labels=authors_num,
+                                         args=model_args, use_cuda=True)
+        loss_queue = []
+        for i in range(30):
+            self.model.train_model(nlp_train[['text', 'author']])
+
+            predictions, raw_outputs = self.model.predict(list(nlp_val['text']))
+            accuracy = accuracy_score(predictions, nlp_val['author'])
+            print("BertAA validation accuracy : ", accuracy)
+
+            loss = mean_squared_error(predictions, nlp_val['author'])
+            loss_queue.append(loss)
+            if early_stop(5, loss_queue):
+                break
+
     def evaluate(self, df):
-        x_test = self.bert_encode(df["text"], tokenizer=self.tokenizer, max_len=self.max_len)
-        y_test = self.encoder.transform(df['author'])
-        y_test = to_categorical(y_test)
-        score, acc = self.model.evaluate(x_test, y_test, verbose=2)
-        return acc
+        predictions, raw_outputs = self.model.predict(list(df['text']))
+        one_hot = self.encoder.transform(df['author'])
+        argmax = np.argmax(one_hot, axis=1)
+        accuracy = accuracy_score(predictions, argmax)
+
+        print("BertAA test accuracy : ", accuracy)
+        predictions_onehot = OneHotEncoder(sparse=False).fit_transform(np.array(predictions.reshape(-1, 1)))
+        return self.encoder.inverse_transform(predictions_onehot)
+
+
+def save_predictions(df: pd.DataFrame, predictions: np.ndarray, file_name: str, model: str) -> None:
+    df_test = df.merge(pd.DataFrame(predictions, columns=["predicted"]), left_index=True, right_index=True)
+    df_test.to_csv(file_name[:-4] + "_" + model + "_predicted.csv")
 
 
 def experiment(dataset_file):
-    df_enron = pd.read_csv(dataset_file, index_col=0)
-    df_enron_train, df_enron_test = train_test_split(df_enron, test_size=0.1)
-    df_enron_train = df_enron_train.reset_index(drop=True)
-    df_enron_test = df_enron_test.reset_index(drop=True)
-
-    # bert_model = BertAAModel(max_len=512)
-    # bert_model.fit_data(df_enron_train)
-    # bert_model.train_model()
-    # print(bert_model.evaluate(df_enron_test))
+    print(dataset_file)
+    df = pd.read_csv(dataset_file, index_col=0).sample(frac=0.1).reset_index(drop=True)
+    df_train, df_test = train_test_split(df, test_size=0.1)
+    df_train = df_train.reset_index(drop=True)
+    df_test = df_test.reset_index(drop=True)
 
     # start_time = time.time()
-    # ensamble_model = EnsembleModel(size_of_layer=1024)
-    # ensamble_model.fit_data(df_enron_train)
-    # ensamble_model.train_models()
+    # num_of_authors = len(np.unique(df_train["author"]))
+    # bert_model = BertAAModel()
+    # bert_model.train_model(num_of_authors, df_train)
+    # predictions = bert_model.evaluate(df_test)
+    # save_predictions(df_test, predictions, dataset_file, model="bert")
     # end_time = time.time()
     # print("Time to fit data: ", end_time - start_time)
-    # print(ensamble_model.evaluate(df_enron_test))
 
     start_time = time.time()
-    lstm_model = LstmModel(df_enron_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
+    ensemble_model = EnsembleModel(size_of_layer=1024)
+    ensemble_model.fit_data(df_train)
+    ensemble_model.train_models()
+    end_time = time.time()
+    print("Time to fit data: ", end_time - start_time)
+    predictions = ensemble_model.evaluate(df_test)
+    save_predictions(df_test, predictions, dataset_file, model="ensemble")
+
+    start_time = time.time()
+    lstm_model = LstmModel(df_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
     lstm_model.run_lstm_model()
     end_time = time.time()
     print("Time to fit data: ", end_time - start_time)
-    print(lstm_model.evaluate(df_enron_test))
+    predictions = lstm_model.evaluate(df_test)
+    save_predictions(df_test, predictions, dataset_file, model="lstm")
 
 
 if __name__ == "__main__":
     experiment("experiment_sets/enron_experiment_sample_5.csv")
-    experiment("experiment_sets/enron_experiment_sample_5.csv")
-    experiment("experiment_sets/enron_experiment_sample_5.csv")
+    # experiment("experiment_sets/enron_experiment_sample_5.csv")
+    # experiment("experiment_sets/enron_experiment_sample_5.csv")
 
-    experiment("experiment_sets/enron_experiment_sample_10.csv")
-    experiment("experiment_sets/enron_experiment_sample_10.csv")
-    experiment("experiment_sets/enron_experiment_sample_10.csv")
+    # experiment("experiment_sets/enron_experiment_sample_10.csv")
+    # experiment("experiment_sets/enron_experiment_sample_10.csv")
+    # experiment("experiment_sets/enron_experiment_sample_10.csv")
 
-    experiment("experiment_sets/enron_experiment_sample_25.csv")
-    experiment("experiment_sets/enron_experiment_sample_25.csv")
-    experiment("experiment_sets/enron_experiment_sample_25.csv")
+    # experiment("experiment_sets/enron_experiment_sample_25.csv")
+    # experiment("experiment_sets/enron_experiment_sample_25.csv")
+    # experiment("experiment_sets/enron_experiment_sample_25.csv")
 
     # mlp_model = MlpModel(model_type="tfidf", batch_ratio=0.1)
     # mlp_model.fit_data(df)
