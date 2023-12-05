@@ -1,5 +1,7 @@
 import pandas as pd
 import json
+
+from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
@@ -28,18 +30,27 @@ def show_confusion_matrix(results_file):
 def show_doc2vec(filename):
     df = pd.read_csv(filename, index_col=0)
     df = df[["author", "text"]]
-    doc2vec_model = create_doc2vec(df, 256)
-    doc2vec_df = embed_doc2vec(df, doc2vec_model)
+    df_group = df.groupby("author")
+    sample = df_group.sample(1000, random_state=42)
 
-    predictions_onehot = LabelEncoder().fit_transform(doc2vec_df["author"])
+    doc2vec_model = create_doc2vec(sample, 256)
+    doc2vec_df = embed_doc2vec(sample, doc2vec_model)
+    doc2vec_df = doc2vec_df.reset_index(drop=True)
 
     pca = PCA(n_components=2)
     pca_df = pca.fit_transform(doc2vec_df.drop(columns=["author"], inplace=False))
-    for i in range(doc2vec_df["author"].nunique()):
-        pass
-    plot = plt.scatter(pca_df[:, 0], pca_df[:, 1], c=predictions_onehot, marker="o", alpha=0.5)
+
+    authors = doc2vec_df["author"].unique()
+    for author in authors:
+        sub = doc2vec_df[doc2vec_df["author"] == author]
+        sub_index = sub.index
+        plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker=".", s=40, alpha=0.4, edgecolor="None")
+
+    # plt.scatter(pca_df[:, 0], pca_df[:, 1], c=predictions_onehot, marker="o", alpha=0.5, cmap="Set1")
+    plt.legend()
+    plt.set_cmap("Set1")
     # plt.show()
-    plt.savefig("doc2vec.png")
+    plt.savefig("doc2vec.png", dpi=2000)
 
 
 def exploration():

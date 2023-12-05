@@ -196,6 +196,7 @@ class EnsembleModel:
         self.y_val = None
         self.y_val_one_hot = None
         self.size_of_layer = size_of_layer
+        self.columns = None
 
         self.random_forest = None
         self.xgboost = None
@@ -206,6 +207,7 @@ class EnsembleModel:
 
     def fit_data(self, df: pd.DataFrame) -> None:
         df = df[["author", "text"]]
+        self.df = df
         self.x_train, self.x_val, self.y_train, self.y_val = train_test_split(df["text"], df["author"],
                                                                               test_size=0.2)
 
@@ -220,6 +222,7 @@ class EnsembleModel:
         # transforms text to count vector
         self.data_transformer = process_text.create_count_vector(self.x_train)
         self.x_train = process_text.transform_count_vector(self.x_train, self.data_transformer)
+        self.columns = self.x_train.columns
         self.scaler = MinMaxScaler()
         self.x_train = self.scaler.fit_transform(self.x_train)
         self.x_val = process_text.transform_count_vector(self.x_val, self.data_transformer)
@@ -252,7 +255,7 @@ class EnsembleModel:
 
     def train_models(self):
         self.init_mlp()
-        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=1)
         self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
                      callbacks=[callback])
 
@@ -281,7 +284,14 @@ class EnsembleModel:
 
         return pred, random_forest_pred, xgboost_pred, mlp_pred
 
+    def rf_feature_importance(self):
+        importances = self.random_forest.feature_importances_
+        std = np.std([tree.feature_importances_ for tree in self.random_forest.estimators_], axis=0)
+        return importances
+
     def evaluate(self, df: pd.DataFrame):
+        self.rf_feature_importance()
+
         y_test_one_hot = self.encoder.transform(df['author'])
         y_test = np.argmax(y_test_one_hot, axis=1)
         # x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
@@ -401,13 +411,13 @@ def experiment(dataset_file):
     predictions = ensemble_model.evaluate(df_test)
     save_predictions(df_test, predictions, dataset_file, model="ensemble")
 
-    start_time = time.time()
-    lstm_model = LstmModel(df_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
-    lstm_model.run_lstm_model()
-    end_time = time.time()
-    print("Time to fit data: ", end_time - start_time)
-    predictions = lstm_model.evaluate(df_test)
-    save_predictions(df_test, predictions, dataset_file, model="lstm")
+    # start_time = time.time()
+    # lstm_model = LstmModel(df_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
+    # lstm_model.run_lstm_model()
+    # end_time = time.time()
+    # print("Time to fit data: ", end_time - start_time)
+    # predictions = lstm_model.evaluate(df_test)
+    # save_predictions(df_test, predictions, dataset_file, model="lstm")
 
 
 if __name__ == "__main__":
