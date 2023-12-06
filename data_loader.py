@@ -113,14 +113,14 @@ def slice_text(text: str, file_path: str) -> str:
         res = [i.start() for i in re.finditer("\n\n\n\n\n\n", text)]
         text = text[:res[0]]
 
-    if text.count("To: ") > 2:
-        res = [i.start() for i in re.finditer("To: ", text)]
+    if text.count("To:") > 2:
+        res = [i.start() for i in re.finditer("To:", text)]
         text = text[:res[2]]
-    if text.count("From: ") > 2:
-        res = [i.start() for i in re.finditer("From: ", text)]
+    if text.count("From:") > 2:
+        res = [i.start() for i in re.finditer("From:", text)]
         text = text[:res[2]]
-    if text.count("Sent by: ") > 2:
-        res = [i.start() for i in re.finditer("Sent by: ", text)]
+    if text.count("Sent by:") > 2:
+        res = [i.start() for i in re.finditer("Sent by:", text)]
         text = text[:res[2]]
 
     for author in signature:
@@ -132,8 +132,8 @@ def slice_text(text: str, file_path: str) -> str:
                     email_end = email_end.replace(signature_type, "")
                     text = email_start + email_end
                 else:
-                    email_start = text[:-(50 + len(signature_type))]
-                    email_end = text[-(50 + len(signature_type)):]
+                    email_start = text[:-(200 + len(signature_type))]
+                    email_end = text[-(200 + len(signature_type)):]
                     email_end = email_end.replace(signature_type, "")
                     text = email_start + email_end
 
@@ -209,6 +209,9 @@ def process_time(text: str) -> int:
 def load_email(file_path: str, email_list: list[list[str]], user_addresses: set[str], translatable_addresses: set[str],
                email_translator: pd.DataFrame, code="utf-8") -> None:
     with open(file_path, 'r', encoding=code) as file_desc:
+        if "kaminski-v/sent_items/738" in file_path:
+            pass
+
         text = file_desc.read()
 
         # gets sender

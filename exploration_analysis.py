@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import json
 
@@ -44,13 +46,64 @@ def show_doc2vec(filename):
     for author in authors:
         sub = doc2vec_df[doc2vec_df["author"] == author]
         sub_index = sub.index
-        plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker=".", s=40, alpha=0.4, edgecolor="None")
+        plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker="o", s=30, alpha=0.4, edgecolor="None")
 
     # plt.scatter(pca_df[:, 0], pca_df[:, 1], c=predictions_onehot, marker="o", alpha=0.5, cmap="Set1")
     plt.legend()
     plt.set_cmap("Set1")
+    plt.tight_layout()
     # plt.show()
-    plt.savefig("doc2vec.png", dpi=2000)
+    plt.savefig("doc2vec_techcrunch.png", dpi=1000)
+
+
+word_occ_enron = {
+            "best": 0,
+            "shall": 0,
+            "hi": 0,
+            "counterparty": 0,
+            "deal": 0,
+            "ces": 0,
+            "ge": 0,
+            "ll": 0,
+            "agreement": 0,
+            "gas": 0
+        }
+
+word_occ_tech = {
+            "said": 0,
+            "explains": 0,
+            "company": 0,
+            "says": 0,
+            "like": 0,
+            "today": 0,
+            "apple": 0,
+            "services": 0,
+            "million": 0,
+            "hardware": 0
+        }
+
+
+def most_used_words(filename):
+    df = pd.read_csv(filename, index_col=0)
+    df = df[["author", "text"]]
+
+    authors = df["author"].unique()
+    for author in authors:
+        author_occ = word_occ_tech.copy()
+        author_df = df[df["author"] == author]
+        for word in author_occ:
+            for _, text in author_df.iterrows():
+                words = re.sub("[^\w]", " ", text["text"].lower()).split()
+                num_of_occ = words.count(word)
+                author_occ[word] += num_of_occ
+                if word == "shall":
+                    condition = num_of_occ > 0
+                    if condition:
+                        pass
+                        print(text["text"])
+
+        print("Author: " + author)
+        print(author_occ)
 
 
 def exploration():
@@ -78,7 +131,8 @@ def exploration():
 
 if __name__ == "__main__":
     # exploration()
-    show_doc2vec("experiment_sets/enron_experiment_sample_5.csv")
+    # most_used_words("experiment_sets/techcrunch_experiment_sample_5.csv")
+    show_doc2vec("experiment_sets/techcrunch_experiment_sample_5.csv")
     # show_confusion_matrix("experiment_sets/enron_experiment_sample_5_bert_predicted.csv")
 
 

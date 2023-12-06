@@ -256,8 +256,8 @@ class EnsembleModel:
     def train_models(self):
         self.init_mlp()
         callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=1)
-        self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
-                     callbacks=[callback])
+        #self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
+        #             callbacks=[callback])
 
         self.init_random_forest()
         self.random_forest.fit(self.x_train, self.y_train)
@@ -287,6 +287,9 @@ class EnsembleModel:
     def rf_feature_importance(self):
         importances = self.random_forest.feature_importances_
         std = np.std([tree.feature_importances_ for tree in self.random_forest.estimators_], axis=0)
+        importances_labels = list(zip(self.columns, importances))
+        df = pd.DataFrame(importances_labels, columns=["feature", "importance"])
+        df = df.sort_values(by=["importance"], ascending=False)
         return importances
 
     def evaluate(self, df: pd.DataFrame):
@@ -388,7 +391,7 @@ def save_predictions(df: pd.DataFrame, predictions: np.ndarray, file_name: str, 
 
 def experiment(dataset_file):
     print(dataset_file)
-    df = pd.read_csv(dataset_file, index_col=0).sample(frac=0.1).reset_index(drop=True)
+    df = pd.read_csv(dataset_file, index_col=0)
     df_train, df_test = train_test_split(df, test_size=0.1)
     df_train = df_train.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
