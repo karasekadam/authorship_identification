@@ -2,6 +2,7 @@ import re
 
 import pandas as pd
 import json
+import numpy as np
 
 from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -29,6 +30,16 @@ def show_confusion_matrix(results_file):
     plt.show()
 
 
+color_map = {
+    0: "red",
+    1: "blue",
+    2: "green",
+    3: "yellow",
+    4: "grey"
+}
+
+
+
 def show_doc2vec(filename):
     df = pd.read_csv(filename, index_col=0)
     df = df[["author", "text"]]
@@ -43,17 +54,30 @@ def show_doc2vec(filename):
     pca_df = pca.fit_transform(doc2vec_df.drop(columns=["author"], inplace=False))
 
     authors = doc2vec_df["author"].unique()
-    for author in authors:
+    for i, author in enumerate(authors):
+        if author != "kay.mann":
+            continue
         sub = doc2vec_df[doc2vec_df["author"] == author]
         sub_index = sub.index
-        plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker="o", s=30, alpha=0.4, edgecolor="None")
+        plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker="o", s=30, alpha=0.4,
+                    edgecolor="None", color=color_map[i])
+
+    for i, author in enumerate(authors):
+        if author != "kay.mann":
+            continue
+        sub = doc2vec_df[doc2vec_df["author"] == author]
+        sub_index = sub.index
+        x_mean = np.mean(pca_df[sub_index, 0])
+        y_mean = np.mean(pca_df[sub_index, 1])
+        plt.scatter(x_mean, y_mean, marker="X", alpha=0.8,
+                    edgecolor="black", color=color_map[i], s=100)
 
     # plt.scatter(pca_df[:, 0], pca_df[:, 1], c=predictions_onehot, marker="o", alpha=0.5, cmap="Set1")
     plt.legend()
-    plt.set_cmap("Set1")
-    plt.tight_layout()
-    # plt.show()
-    plt.savefig("doc2vec_techcrunch.png", dpi=1000)
+    # plt.set_cmap("Set1")
+    # plt.tight_layout()
+    plt.show(dpi=1000)
+    # plt.savefig("doc2vec_enron.png", dpi=1000)
 
 
 word_occ_enron = {
@@ -132,7 +156,7 @@ def exploration():
 if __name__ == "__main__":
     # exploration()
     # most_used_words("experiment_sets/techcrunch_experiment_sample_5.csv")
-    show_doc2vec("experiment_sets/techcrunch_experiment_sample_5.csv")
+    show_doc2vec("experiment_sets/enron_experiment_sample_5.csv")
     # show_confusion_matrix("experiment_sets/enron_experiment_sample_5_bert_predicted.csv")
 
 
