@@ -39,7 +39,6 @@ color_map = {
 }
 
 
-
 def show_doc2vec(filename):
     df = pd.read_csv(filename, index_col=0)
     df = df[["author", "text"]]
@@ -156,7 +155,7 @@ def exploration():
 if __name__ == "__main__":
     # exploration()
     # most_used_words("experiment_sets/techcrunch_experiment_sample_5.csv")
-    show_doc2vec("experiment_sets/enron_experiment_sample_5.csv")
+    show_doc2vec("experiment_sets/telegram_experiment_sample_5.csv")
     # show_confusion_matrix("experiment_sets/enron_experiment_sample_5_bert_predicted.csv")
 
 

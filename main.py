@@ -21,6 +21,7 @@ import os
 import time
 from simpletransformers.classification import ClassificationModel
 from simpletransformers.config.model_args import ClassificationArgs
+from transformers_interpret import SequenceClassificationExplainer
 sys.argv=['preserve_unused_tokens=False']
 flags.FLAGS(sys.argv)
 
@@ -359,7 +360,7 @@ class BertAAModel:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         self.model = ClassificationModel('bert', 'bert-base-cased', num_labels=authors_num,
-                                         args=model_args, use_cuda=True)
+                                         args=model_args, use_cuda=False)
         loss_queue = []
         for i in range(30):
             self.model.train_model(nlp_train[['text', 'author']])
@@ -373,7 +374,22 @@ class BertAAModel:
             if early_stop(5, loss_queue):
                 break
 
+    def explainability(self, df) -> None:
+        word_importance = {}
+        cls_explainer = SequenceClassificationExplainer(self.model.model, self.model.tokenizer)
+
+        for row in df.iterrows:
+            word_predicions = cls_explainer(row["text"])
+            print(cls_explainer.predicted_class_name)
+            for word, importance in word_predicions:
+                if word in word_importance:
+                    word_importance[word] += importance
+                else:
+                    word_importance[word] = importance
+
     def evaluate(self, df):
+        self.explainability(df)
+
         predictions, raw_outputs = self.model.predict(list(df['text']))
         one_hot = self.encoder.transform(df['author'])
         argmax = np.argmax(one_hot, axis=1)
@@ -391,28 +407,28 @@ def save_predictions(df: pd.DataFrame, predictions: np.ndarray, file_name: str, 
 
 def experiment(dataset_file):
     print(dataset_file)
-    df = pd.read_csv(dataset_file, index_col=0)
+    df = pd.read_csv(dataset_file, index_col=0).sample(frac=0.01).reset_index(drop=True)
     df_train, df_test = train_test_split(df, test_size=0.1)
     df_train = df_train.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
 
-    # start_time = time.time()
-    # num_of_authors = len(np.unique(df_train["author"]))
-    # bert_model = BertAAModel()
-    # bert_model.train_model(num_of_authors, df_train)
-    # predictions = bert_model.evaluate(df_test)
-    # save_predictions(df_test, predictions, dataset_file, model="bert")
-    # end_time = time.time()
-    # print("Time to fit data: ", end_time - start_time)
-
     start_time = time.time()
-    ensemble_model = EnsembleModel(size_of_layer=1024)
-    ensemble_model.fit_data(df_train)
-    ensemble_model.train_models()
+    num_of_authors = len(np.unique(df_train["author"]))
+    bert_model = BertAAModel()
+    bert_model.train_model(num_of_authors, df_train)
+    predictions = bert_model.evaluate(df_test)
+    save_predictions(df_test, predictions, dataset_file, model="bert")
     end_time = time.time()
     print("Time to fit data: ", end_time - start_time)
-    predictions = ensemble_model.evaluate(df_test)
-    save_predictions(df_test, predictions, dataset_file, model="ensemble")
+
+    # start_time = time.time()
+    # ensemble_model = EnsembleModel(size_of_layer=1024)
+    # ensemble_model.fit_data(df_train)
+    # ensemble_model.train_models()
+    # end_time = time.time()
+    # print("Time to fit data: ", end_time - start_time)
+    # predictions = ensemble_model.evaluate(df_test)
+    # save_predictions(df_test, predictions, dataset_file, model="ensemble")
 
     # start_time = time.time()
     # lstm_model = LstmModel(df_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
