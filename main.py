@@ -287,10 +287,14 @@ class EnsembleModel:
 
     def rf_feature_importance(self):
         importances = self.random_forest.feature_importances_
-        std = np.std([tree.feature_importances_ for tree in self.random_forest.estimators_], axis=0)
         importances_labels = list(zip(self.columns, importances))
         df = pd.DataFrame(importances_labels, columns=["feature", "importance"])
         df = df.sort_values(by=["importance"], ascending=False)
+
+        importances_xgb = self.xgboost.feature_importances_
+        importances_xgb_labels = list(zip(self.columns, importances_xgb))
+        df_xgb = pd.DataFrame(importances_xgb_labels, columns=["feature", "importance"])
+        df_xgb = df_xgb.sort_values(by=["importance"], ascending=False)
         return importances
 
     def evaluate(self, df: pd.DataFrame):
@@ -412,23 +416,23 @@ def experiment(dataset_file):
     df_train = df_train.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
 
-    start_time = time.time()
-    num_of_authors = len(np.unique(df_train["author"]))
-    bert_model = BertAAModel()
-    bert_model.train_model(num_of_authors, df_train)
-    predictions = bert_model.evaluate(df_test)
-    save_predictions(df_test, predictions, dataset_file, model="bert")
-    end_time = time.time()
-    print("Time to fit data: ", end_time - start_time)
-
     # start_time = time.time()
-    # ensemble_model = EnsembleModel(size_of_layer=1024)
-    # ensemble_model.fit_data(df_train)
-    # ensemble_model.train_models()
+    # num_of_authors = len(np.unique(df_train["author"]))
+    # bert_model = BertAAModel()
+    # bert_model.train_model(num_of_authors, df_train)
+    # predictions = bert_model.evaluate(df_test)
+    # save_predictions(df_test, predictions, dataset_file, model="bert")
     # end_time = time.time()
     # print("Time to fit data: ", end_time - start_time)
-    # predictions = ensemble_model.evaluate(df_test)
-    # save_predictions(df_test, predictions, dataset_file, model="ensemble")
+
+    start_time = time.time()
+    ensemble_model = EnsembleModel(size_of_layer=1024)
+    ensemble_model.fit_data(df_train)
+    ensemble_model.train_models()
+    end_time = time.time()
+    print("Time to fit data: ", end_time - start_time)
+    predictions = ensemble_model.evaluate(df_test)
+    save_predictions(df_test, predictions, dataset_file, model="ensemble")
 
     # start_time = time.time()
     # lstm_model = LstmModel(df_train, embed_letters=True, limited_len=True, batch_ratio=1, max_len=100)
