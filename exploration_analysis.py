@@ -89,7 +89,9 @@ word_occ_enron = {
             "ge": 0,
             "ll": 0,
             "agreement": 0,
-            "gas": 0
+            "gas": 0,
+            "scott": 0,
+            "university": 0
         }
 
 word_occ_tech = {
@@ -112,7 +114,7 @@ def most_used_words(filename):
 
     authors = df["author"].unique()
     for author in authors:
-        author_occ = word_occ_tech.copy()
+        author_occ = word_occ_enron.copy()
         author_df = df[df["author"] == author]
         for word in author_occ:
             for _, text in author_df.iterrows():
@@ -123,7 +125,7 @@ def most_used_words(filename):
                     condition = num_of_occ > 0
                     if condition:
                         pass
-                        print(text["text"])
+                        # print(text["text"])
 
         print("Author: " + author)
         print(author_occ)
@@ -154,8 +156,8 @@ def exploration():
 
 if __name__ == "__main__":
     # exploration()
-    # most_used_words("experiment_sets/techcrunch_experiment_sample_5.csv")
-    show_doc2vec("experiment_sets/telegram_experiment_sample_5.csv")
+    most_used_words("experiment_sets/enron_experiment_sample_5.csv")
+    # show_doc2vec("experiment_sets/telegram_experiment_sample_5.csv")
     # show_confusion_matrix("experiment_sets/enron_experiment_sample_5_bert_predicted.csv")
 
 
