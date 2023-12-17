@@ -5,24 +5,6 @@ import pandas as pd
 import json
 
 
-header_metadata_columns = ["sent_hour", "subject_num_of_words", "subject_num_of_char", "subject_num_of_uppercase_char",
-                           "num_od_numeric_char", "num_of_punctuation_marks", "num_of_addressees",
-                           "num_of_addressees_from_same_domain", "num_of_cc", "num_of_cc_from_same_domain"]
-
-
-"""def load_corpus(path):
-    corpus = {}
-    dir_list = os.listdir(path)
-    files = [f for f in dir_list if os.path.isfile(path + '/' + f)]
-    for file in files:
-        name = file.split('.txt')[0]
-        load_email({}, path + '/' + file)
-        with open(path + '/' + file, 'r', encoding='utf-8') as f:
-            text = f.read()
-        corpus[name] = text
-    return corpus"""
-
-
 def process_text(full_email_text: str) -> str | None:
     by_enter = full_email_text.split('\n')
     if len(by_enter) < 15:
