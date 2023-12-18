@@ -1,4 +1,23 @@
-class LstmModel:
+from math import floor
+
+import numpy as np
+import pandas as pd
+from keras.layers import (Dense, Input, Dropout, LSTM, Embedding,
+                          Bidirectional, GlobalMaxPooling1D)
+from keras.initializers import Constant
+from keras import Model
+from keras.src.optimizers import Adam
+from keras.preprocessing.text import Tokenizer
+from keras.utils import pad_sequences
+from sklearn.preprocessing import LabelBinarizer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import tensorflow as tf
+
+import process_text
+
+
+class EmailDetective:
     def __init__(self, df: pd.DataFrame, embed_letters: bool = False, limited_len: bool = True, embed_dim: int = 256,
                  batch_ratio: float = 1, max_len: int = 256) -> None:
         self.df = df

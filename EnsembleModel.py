@@ -1,3 +1,25 @@
+import numpy as np
+import pandas as pd
+from keras.src.optimizers import Adam
+from keras import Sequential, regularizers
+from keras.layers import (Dense, Dropout)
+import process_text
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler, LabelBinarizer, OneHotEncoder
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+import tensorflow as tf
+
+
+def softmax_to_binary(softmax_pred: np.ndarray) -> np.ndarray:
+    binary_pred = np.zeros(shape=softmax_pred.shape)
+    for i in range(softmax_pred.shape[0]):
+        max_index = np.argmax(softmax_pred[i])
+        binary_pred[i][max_index] = 1
+
+    return binary_pred
+
 
 class EnsembleModel:
     def __init__(self, size_of_layer: int) -> None:
@@ -68,8 +90,8 @@ class EnsembleModel:
     def train_models(self):
         self.init_mlp()
         callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=1)
-        #self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
-        #             callbacks=[callback])
+        self.mlp.fit(self.x_train, self.y_train_one_hot, epochs=100, validation_data=(self.x_val, self.y_val_one_hot),
+                     callbacks=[callback])
 
         self.init_random_forest()
         self.random_forest.fit(self.x_train, self.y_train)
@@ -113,7 +135,6 @@ class EnsembleModel:
 
         y_test_one_hot = self.encoder.transform(df['author'])
         y_test = np.argmax(y_test_one_hot, axis=1)
-        # x_test = process_text.transform_tf_idf(df["text"], self.data_transformer)
 
         predicted, rf_pred, xgb_pred, mlp_pred = self.predict(df)
         print("Ensemble accuracy: ", accuracy_score(y_true=y_test, y_pred=predicted))

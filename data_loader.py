@@ -2,7 +2,7 @@ import os
 import time
 import re
 import pandas as pd
-import json
+from header_columns import header_metadata_columns
 
 
 def process_text(full_email_text: str) -> str | None:
@@ -411,13 +411,6 @@ signature = {
 
 
 if __name__ == "__main__":
-    pass
     # gather_corpus("enron_mail", "enron.csv")
     # prepare_all_experiments_sets()
     prepare_experiment_set(5, 300, pd.read_csv("telegram.csv", index_col=0), "experiment_sets/telegram.csv")
-    # process_techcruch()
-    # test_sample = prepare_test_set()
-    # test_sample.to_csv("test_sample5.csv")
-    # gather_user_emails()
-    # filter_most_used_emails(5)
-    # check proč gather addresses nevzalo rodrigue

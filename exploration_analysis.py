@@ -30,15 +30,6 @@ def show_confusion_matrix(results_file):
     plt.show()
 
 
-color_map = {
-    0: "red",
-    1: "blue",
-    2: "green",
-    3: "yellow",
-    4: "grey"
-}
-
-
 def show_doc2vec(filename):
     df = pd.read_csv(filename, index_col=0)
     df = df[["author", "text"]]
@@ -54,27 +45,12 @@ def show_doc2vec(filename):
 
     authors = doc2vec_df["author"].unique()
     for i, author in enumerate(authors):
-        if author != "kay.mann":
-            continue
         sub = doc2vec_df[doc2vec_df["author"] == author]
         sub_index = sub.index
         plt.scatter(pca_df[sub_index, 0], pca_df[sub_index, 1], label=author, marker="o", s=30, alpha=0.4,
-                    edgecolor="None", color=color_map[i])
+                    edgecolor="None", cmap="Set1")
 
-    for i, author in enumerate(authors):
-        if author != "kay.mann":
-            continue
-        sub = doc2vec_df[doc2vec_df["author"] == author]
-        sub_index = sub.index
-        x_mean = np.mean(pca_df[sub_index, 0])
-        y_mean = np.mean(pca_df[sub_index, 1])
-        plt.scatter(x_mean, y_mean, marker="X", alpha=0.8,
-                    edgecolor="black", color=color_map[i], s=100)
-
-    # plt.scatter(pca_df[:, 0], pca_df[:, 1], c=predictions_onehot, marker="o", alpha=0.5, cmap="Set1")
     plt.legend()
-    # plt.set_cmap("Set1")
-    # plt.tight_layout()
     plt.show(dpi=1000)
     # plt.savefig("doc2vec_enron.png", dpi=1000)
 
@@ -121,12 +97,6 @@ def most_used_words(filename):
                 words = re.sub("[^\w]", " ", text["text"].lower()).split()
                 num_of_occ = words.count(word)
                 author_occ[word] += num_of_occ
-                if word == "shall":
-                    condition = num_of_occ > 0
-                    if condition:
-                        pass
-                        # print(text["text"])
-
         print("Author: " + author)
         print(author_occ)
 
@@ -150,30 +120,10 @@ def exploration():
     print(f"Total number of texts {len(text_data)}.")
 
     text_data["len"] = text_data["text"].str.len()
-    text_data = text_data.sort_values(by=["len"], ascending=False)
-    # print(text_data.head(10)["path"])
 
 
 if __name__ == "__main__":
     # exploration()
-    most_used_words("experiment_sets/enron_experiment_sample_5.csv")
-    # show_doc2vec("experiment_sets/telegram_experiment_sample_5.csv")
+    # most_used_words("experiment_sets/enron_experiment_sample_5.csv")
+    show_doc2vec("experiment_sets/telegram_experiment_sample_5.csv")
     # show_confusion_matrix("experiment_sets/enron_experiment_sample_5_bert_predicted.csv")
-
-
-def clean_json():
-    with open("email_content_3.json") as file:
-        email_content = file.read()
-        email_content = email_content.replace("ObjectId", "")
-        email_content = email_content.replace("(", "")
-        email_content = email_content.replace(")", "")
-        email_content = email_content.replace("}", "},")
-        email_content = "[" + email_content + "]"
-        email_content = email_content[:-3] + email_content[-2:].replace(",", "")
-        with open("email_content_3_clean.json", "w") as file2:
-            file2.write(email_content)
-        print(email_content[0])
-    with open("email_content_3_clean.json") as file:
-        email_content = json.load(file)
-        print(email_content[0]["content"])
-

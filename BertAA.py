@@ -1,3 +1,32 @@
+import os
+import sys
+from absl import flags
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler, LabelBinarizer, OneHotEncoder
+from sklearn.metrics import accuracy_score, mean_squared_error
+from simpletransformers.classification import ClassificationModel
+from simpletransformers.config.model_args import ClassificationArgs
+from transformers_interpret import SequenceClassificationExplainer
+
+
+sys.argv = ['preserve_unused_tokens=False']
+flags.FLAGS(sys.argv)
+
+
+def early_stop(patience: int, loss_queue: list) -> bool:
+    if len(loss_queue) < patience:
+        return False
+    else:
+        for i in range(len(loss_queue)):
+            if loss_queue[0] > loss_queue[i]:
+                loss_queue.pop(0)
+                return False
+        return True
+
+
 class BertAAModel:
     def __init__(self):
         self.model = None
@@ -55,10 +84,9 @@ class BertAAModel:
         a = (overflow + len(tokenized_texts["input_ids"]) * 512) / (len(tokenized_texts["input_ids"]) * 512)
         print(a)
 
-    def expleinability(self, df) -> None:
+    def explainability(self, df) -> None:
         word_importance = {}
         cls_explainer = SequenceClassificationExplainer(self.model.model, self.model.tokenizer)
-
 
         for row in df.iterrows:
             word_predicions = cls_explainer(row["text"])
@@ -70,7 +98,7 @@ class BertAAModel:
                     word_importance[word] = importance
 
     def evaluate(self, df):
-        self.expleinability(df)
+        self.explainability(df)
 
         predictions, raw_outputs = self.model.predict(list(df['text']))
         one_hot = self.encoder.transform(df['author'])

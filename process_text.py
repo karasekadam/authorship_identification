@@ -7,15 +7,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 
 
 def glove_load() -> dict[str, np.ndarray]:
-    embedding_dict={}
-    with open('glove.840B.300d.txt','r', encoding="utf-8") as f:
+    embedding_dict = {}
+    with open('glove.840B.300d.txt', 'r', encoding="utf-8") as f:
         for line in f:
-            values=line.split()
-            word=values[0]
-            if len(values[1:])!=300:
+            values = line.split()
+            word = values[0]
+            if len(values[1:]) != 300:
                 continue
-            vectors=np.asarray(values[1:],'float32')
-            embedding_dict[word]=vectors
+            vectors = np.asarray(values[1:], 'float32')
+            embedding_dict[word] = vectors
     print("Glove loaded")
     return embedding_dict
 
@@ -102,7 +102,6 @@ def create_count_vector(corpus_df: pd.Series) -> CountVectorizer:
 
 
 def transform_count_vector(transform_df: pd.Series, count_vectorizer: CountVectorizer) -> pd.DataFrame:
-    # data = transform_df["text"].tolist()
     tfidf_matrix = count_vectorizer.transform(transform_df)
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=count_vectorizer.get_feature_names_out(), index=transform_df.index)
     df = pd.concat([transform_df, tfidf_df], axis=1)
@@ -111,7 +110,6 @@ def transform_count_vector(transform_df: pd.Series, count_vectorizer: CountVecto
 
 
 def transform_tf_idf(transform_df: pd.Series, tfidf_vectorizer: TfidfVectorizer) -> pd.DataFrame:
-    # data = transform_df["text"].tolist()
     tfidf_matrix = tfidf_vectorizer.transform(transform_df)
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out(), index=transform_df.index)
     df = pd.concat([transform_df, tfidf_df], axis=1)
@@ -145,8 +143,5 @@ def embed_doc2vec(df: pd.DataFrame, model: Doc2Vec) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    corpus = pd.read_csv("corpus.csv", index_col=0)
-    # glove_avg_corpus = glove_avg_embedding(corpus)
-    # glove_avg_corpus.to_csv("corpus_glove_avg.csv")
-    create_word2vec_letters(corpus)
+    pass
 
