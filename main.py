@@ -59,7 +59,7 @@ def run_all_experiments():
 
     experiment("experiment_sets/techcrunch_experiment_sample_5.csv")
     experiment("experiment_sets/techcrunch_experiment_sample_10.csv")
-    experiment("experiment_sets/tehcrunch_experiment_sample_25.csv")
+    experiment("experiment_sets/techrunch_experiment_sample_25.csv")
 
     experiment("experiment_sets/telegram_experiment_sample_5.csv")
     experiment("experiment_sets/telegram_experiment_sample_10.csv")
@@ -67,4 +67,4 @@ def run_all_experiments():
 
 
 if __name__ == "__main__":
-    experiment("experiment_sets/enron_experiment_sample_5.csv")
+    run_all_experiments()

@@ -351,6 +351,9 @@ def prepare_experiment_set(number_of_authors: int, samples_per_author: int, data
 
 
 def prepare_all_experiments_sets():
+    if not os.path.exists("experiment_sets"):
+        os.mkdir("experiment_sets")
+
     # 5 authors experiment sets
     df_enron = pd.read_csv("enron.csv", index_col=0)
     prepare_experiment_set(5, 4000, df_enron, "experiment_sets/enron_experiment_sample_5.csv")
@@ -411,6 +414,4 @@ signature = {
 
 
 if __name__ == "__main__":
-    # gather_corpus("enron_mail", "enron.csv")
-    # prepare_all_experiments_sets()
-    prepare_experiment_set(5, 300, pd.read_csv("telegram.csv", index_col=0), "experiment_sets/telegram.csv")
+    prepare_all_experiments_sets()
